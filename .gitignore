@@ -1,0 +1,3 @@
+# Don't commit secrets!
+.proxmox_credentials.yaml
+
