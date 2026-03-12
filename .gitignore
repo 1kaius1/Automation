@@ -1,3 +1,4 @@
-# Don't commit secrets!
+# Don't commit runtime files
 .proxmox_credentials.yaml
+config.yaml
 
