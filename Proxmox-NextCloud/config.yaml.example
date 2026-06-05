@@ -1,0 +1,137 @@
+---
+# ============================================
+# NextCloud Deployment Configuration
+# ============================================
+#
+# This file contains all settings for your NextCloud deployment.
+# 
+# USAGE:
+#   1. Copy this file: cp config.yaml.example config.yaml
+#   2. Edit config.yaml with your actual values
+#   3. Run deployment: ./Deploy.sh
+#
+# If config.yaml doesn't exist, you'll be prompted for all values interactively.
+#
+# SECURITY WARNING:
+#   config.yaml contains passwords and secrets!
+#   - Set permissions: chmod 600 config.yaml
+#   - Never commit config.yaml to git (it's in .gitignore)
+#   - Keep config.yaml.example with placeholder values only
+#
+# ============================================
+
+# ========================================
+# Proxmox Connection
+# ========================================
+# Connection details for your Proxmox server
+
+proxmox_api_host: "192.168.1.100"           # Proxmox server IP or hostname (no https://)
+proxmox_node: "pve"                          # Proxmox node name (usually 'pve')
+proxmox_api_token_id: "ansible@pve!automation-token"  # Full API token ID (user@realm!tokenname)
+proxmox_api_token_secret: "12345678-1234-1234-1234-123456789abc"  # Token secret UUID
+
+# ========================================
+# Storage Configuration
+# ========================================
+# Where containers and data will be stored
+
+storage_pool: "pool1"                        # LVM-Thin storage pool name
+template_storage: "local"                    # Storage location for LXC templates
+lxc_template: "debian-12-standard_12.2-1_amd64.tar.zst"  # LXC template filename
+
+# To see available templates on Proxmox: pveam list local
+
+# ========================================
+# NextCloud Container Resources
+# ========================================
+# Hardware resources allocated to NextCloud container
+
+nextcloud_cores: 2                           # Number of CPU cores
+nextcloud_memory: 2048                       # RAM in MB
+nextcloud_root_disk_size: 16                 # Root disk size in GB
+nextcloud_data_disk_size: 200                # Data disk size in GB (for user files)
+
+# ========================================
+# Collabora Container Resources
+# ========================================
+# Hardware resources allocated to Collabora Office container
+
+collabora_cores: 2                           # Number of CPU cores
+collabora_memory: 2048                       # RAM in MB
+collabora_disk_size: 12                      # Disk size in GB
+
+# ========================================
+# Network Configuration
+# ========================================
+# Network settings for both containers
+
+network_bridge: "vmbr0"                      # Network bridge name
+
+# IP Configuration Options:
+#   - For DHCP: "dhcp"
+#   - For Static: "192.168.1.100/24,gw=192.168.1.1"
+
+nextcloud_ip_config: "dhcp"                  # NextCloud IP configuration
+collabora_ip_config: "dhcp"                  # Collabora IP configuration
+
+# ========================================
+# Credentials - Container Access
+# ========================================
+# Root password for both LXC containers
+
+container_root_password: "strong-password-here"  # Use a strong password!
+
+# ========================================
+# Credentials - Database
+# ========================================
+# MariaDB database credentials for NextCloud
+
+nextcloud_db_name: "nextcloud"               # Database name
+nextcloud_db_user: "nextcloud"               # Database username
+nextcloud_db_password: "db-user-password"    # Database user password (generate random)
+nextcloud_db_root_password: "db-root-password"  # MariaDB root password (generate random)
+
+# ========================================
+# Credentials - NextCloud Admin
+# ========================================
+# Administrator account for NextCloud web interface
+
+nextcloud_admin_user: "admin"                # Admin username
+nextcloud_admin_password: "admin-password"   # Admin password (for web login)
+
+# ========================================
+# Domain Configuration
+# ========================================
+# How you'll access NextCloud and Collabora
+
+nextcloud_domain: "nextcloud.local"          # Domain or IP for NextCloud
+                                              # Examples: nextcloud.mydomain.com, 192.168.1.100
+
+collabora_domain: "collabora.local"          # Domain or IP for Collabora
+                                              # Examples: collabora.mydomain.com, 192.168.1.101
+
+# ============================================
+# Advanced Settings (Optional)
+# ============================================
+# These have sensible defaults but can be customized
+
+# PHP version for NextCloud
+# php_version: "8.2"
+
+# NextCloud version (empty = latest stable)
+# nextcloud_version: ""
+
+# Data directory inside container
+# nextcloud_data_dir: "/var/www/nextcloud/data"
+
+# Container hostnames
+# nextcloud_hostname: "nextcloud"
+# collabora_hostname: "collabora"
+
+# Swap space in MB
+# nextcloud_swap: 512
+# collabora_swap: 512
+
+# ============================================
+# End of Configuration
+# ============================================

@@ -1,0 +1,262 @@
+---
+# ============================================
+# Proxmox API User Setup Role
+# ============================================
+#
+# This role creates a dedicated Proxmox API user with minimal permissions
+# for Ansible automation. It runs directly on the Proxmox host via SSH.
+#
+# Prerequisites:
+#   - SSH access to Proxmox host (key or password authentication)
+#   - Root or sudo access on Proxmox host
+#
+# Variables required (passed from main playbook):
+#   - proxmox_api_username: Username to create (e.g., "ansible")
+#   - proxmox_api_realm: Realm for the user (e.g., "pve")
+#   - proxmox_api_token_name: Name for the API token (e.g., "automation-token")
+#   - proxmox_api_role_name: Name of the role (from proxmox_permissions.yml)
+#   - proxmox_api_role_permissions: List of permissions (from proxmox_permissions.yml)
+#
+# Outputs (set as facts for use by other roles):
+#   - generated_api_token_id: The full token ID (username@realm!token-name)
+#   - generated_api_token_secret: The token secret (UUID)
+#
+# ============================================
+
+# ============================================
+# Step 1: Verify we're running on Proxmox
+# ============================================
+
+- name: Check if pveum command exists
+  # The 'pveum' command is Proxmox's user management utility
+  # This verifies we're actually connected to a Proxmox host
+  ansible.builtin.command: which pveum
+  register: pveum_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if not running on Proxmox host
+  ansible.builtin.fail:
+    msg: |
+      Error: The 'pveum' command was not found on this host.
+      This role must run on a Proxmox VE host.
+      Please verify you're connected to the correct server.
+  when: pveum_check.rc != 0
+
+# ============================================
+# Step 2: Create or Update Custom Role
+# ============================================
+
+- name: Check if role already exists
+  # Query Proxmox to see if our custom role is already defined
+  ansible.builtin.command: pveum role list
+  register: role_list
+  changed_when: false
+
+- name: Determine if role exists
+  # Check if our role name appears in the list of existing roles
+  ansible.builtin.set_fact:
+    role_exists: "{{ proxmox_api_role_name in role_list.stdout }}"
+
+- name: Create custom role for Ansible automation
+  # Create a new role with the specified permissions
+  # This role will be assigned to our API user
+  ansible.builtin.command: >
+    pveum role add {{ proxmox_api_role_name }}
+    --privs {{ proxmox_api_role_permissions | join(',') }}
+  when: not role_exists
+  register: role_create
+  changed_when: role_create.rc == 0
+
+- name: Update existing role permissions
+  # If the role already exists, update its permissions to match
+  # our current requirements (in case they've changed)
+  ansible.builtin.command: >
+    pveum role modify {{ proxmox_api_role_name }}
+    --privs {{ proxmox_api_role_permissions | join(',') }}
+  when: role_exists
+  register: role_update
+  changed_when: role_update.rc == 0
+
+# ============================================
+# Step 3: Create API User
+# ============================================
+
+- name: Check if API user already exists
+  # Query Proxmox for list of existing users
+  ansible.builtin.command: pveum user list
+  register: user_list
+  changed_when: false
+
+- name: Determine if user exists
+  # Check if our username@realm combination already exists
+  ansible.builtin.set_fact:
+    user_exists: "{{ (proxmox_api_username + '@' + proxmox_api_realm) in user_list.stdout }}"
+
+- name: Create API user
+  # Create the user in the specified realm (e.g., ansible@pve)
+  # The user is created without a password - authentication will be via API token only
+  ansible.builtin.command: >
+    pveum user add {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+    --comment "Ansible automation user for NextCloud deployment"
+  when: not user_exists
+  register: user_create
+  changed_when: user_create.rc == 0
+
+- name: Display user creation status
+  ansible.builtin.debug:
+    msg: "User {{ proxmox_api_username }}@{{ proxmox_api_realm }} {{ 'already exists' if user_exists else 'created successfully' }}"
+
+# ============================================
+# Step 4: Assign Role to User
+# ============================================
+
+- name: Assign role to user at root level
+  # Grant the custom role to our user at the root path (/)
+  # This gives the user permissions across the entire Proxmox installation
+  # The root path means: all nodes, all storage, all resources
+  ansible.builtin.command: >
+    pveum acl modify /
+    --user {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+    --role {{ proxmox_api_role_name }}
+  register: acl_modify
+  changed_when: acl_modify.rc == 0
+
+# ============================================
+# Step 5: Create API Token
+# ============================================
+
+- name: Check if API token already exists
+  # List all tokens for this user to see if our token name already exists
+  ansible.builtin.command: pveum user token list {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+  register: token_list
+  changed_when: false
+  failed_when: false
+
+- name: Determine if token exists
+  # Check if the token name appears in the list
+  ansible.builtin.set_fact:
+    token_exists: "{{ token_list.rc == 0 and proxmox_api_token_name in token_list.stdout }}"
+
+- name: Prompt to recreate existing token
+  # If the token already exists, ask the user if they want to recreate it
+  # This is necessary because we can't retrieve the secret of an existing token
+  ansible.builtin.pause:
+    prompt: |
+      
+      WARNING: API token '{{ proxmox_api_token_name }}' already exists for user {{ proxmox_api_username }}@{{ proxmox_api_realm }}.
+      
+      The token secret cannot be retrieved once created.
+      
+      Do you want to DELETE and RECREATE this token? (yes/no)
+      If you answer 'no', the playbook will stop and you'll need to provide the existing token manually.
+  register: recreate_token
+  when: token_exists
+
+- name: Fail if user chose not to recreate token
+  ansible.builtin.fail:
+    msg: |
+      Token already exists and you chose not to recreate it.
+      Please re-run the playbook and choose 'no' when asked if you need to create an API user.
+      Then provide your existing token credentials when prompted.
+  when: 
+    - token_exists
+    - recreate_token.user_input | lower not in ['yes', 'y']
+
+- name: Delete existing token
+  # Remove the old token so we can create a new one
+  ansible.builtin.command: >
+    pveum user token remove {{ proxmox_api_username }}@{{ proxmox_api_realm }} {{ proxmox_api_token_name }}
+  when:
+    - token_exists
+    - recreate_token.user_input | lower in ['yes', 'y']
+  register: token_delete
+  changed_when: token_delete.rc == 0
+
+- name: Create API token
+  # Generate a new API token with privilege separation disabled (privsep=0)
+  # privsep=0 means the token has the same permissions as the user
+  # privsep=1 would require separate permission assignment for the token
+  # Output format is JSON so we can parse it easily
+  ansible.builtin.command: >
+    pveum user token add {{ proxmox_api_username }}@{{ proxmox_api_realm }} {{ proxmox_api_token_name }}
+    --privsep 0
+    --output-format json
+  register: token_create
+  changed_when: token_create.rc == 0
+
+- name: Parse token creation output
+  # Extract the token secret (UUID) from the JSON output
+  # This is the only time we'll ever see this secret value
+  ansible.builtin.set_fact:
+    token_secret: "{{ (token_create.stdout | from_json).value }}"
+
+- name: Set token ID fact
+  # Construct the full token ID in the format: username@realm!token-name
+  # This is what will be used for API authentication
+  ansible.builtin.set_fact:
+    token_id: "{{ proxmox_api_username }}@{{ proxmox_api_realm }}!{{ proxmox_api_token_name }}"
+
+# ============================================
+# Step 6: Display Credentials
+# ============================================
+
+- name: Display API credentials
+  # Show the credentials to the user in a clear, easy-to-copy format
+  # These must be saved by the user as they cannot be retrieved again
+  ansible.builtin.debug:
+    msg: |
+      
+      ============================================
+      ✅ Proxmox API User Setup Complete!
+      ============================================
+      
+      IMPORTANT: Save these credentials securely!
+      The token secret cannot be retrieved again.
+      
+      ┌─────────────────────────────────────────────────────────────┐
+      │ Proxmox API Credentials                                     │
+      ├─────────────────────────────────────────────────────────────┤
+      │                                                              │
+      │ Token ID:                                                   │
+      │ {{ token_id }}
+      │                                                              │
+      │ Token Secret:                                               │
+      │ {{ token_secret }}
+      │                                                              │
+      └─────────────────────────────────────────────────────────────┘
+      
+      These credentials will be used for the remainder of this deployment.
+      Store them in securely for future use.
+
+- name: Pause for user to save credentials
+  # Give the user time to copy and save the credentials
+  # The playbook will continue automatically after they press Enter
+  ansible.builtin.pause:
+    prompt: |
+      
+      Please save the API credentials shown above.
+      
+      Press Enter to continue with the deployment...
+
+# ============================================
+# Step 7: Set Facts for Use by Other Roles
+# ============================================
+
+- name: Set API token facts for later use
+  # Make the token credentials available to all subsequent roles
+  # These facts will persist for the entire playbook run
+  ansible.builtin.set_fact:
+    generated_api_token_id: "{{ token_id }}"
+    generated_api_token_secret: "{{ token_secret }}"
+    cacheable: yes
+
+- name: Confirm credentials are set
+  ansible.builtin.debug:
+    msg: "API credentials have been set and will be used for container creation."
+
+# ============================================
+# End of Proxmox Setup Role
+# ============================================
+
+

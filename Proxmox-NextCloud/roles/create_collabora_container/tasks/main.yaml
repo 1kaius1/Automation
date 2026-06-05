@@ -1,0 +1,407 @@
+---
+# ============================================
+# Create Collabora LXC Container Role
+# ============================================
+#
+# This role creates an LXC container on Proxmox for Collabora Office installation.
+# It uses the Proxmox API to create the container with specified resources.
+#
+# Prerequisites:
+#   - Valid Proxmox API credentials
+#   - LXC template downloaded in Proxmox
+#   - Storage pool available
+#   - Network bridge configured
+#
+# Variables required (passed from main playbook):
+#   - proxmox_api_host: Proxmox host IP/FQDN
+#   - proxmox_api_token_id: API token ID for authentication
+#   - proxmox_api_token_secret: API token secret
+#   - proxmox_node: Proxmox node name
+#   - collabora_hostname: Hostname for the container
+#   - lxc_template: Template file name
+#   - template_storage: Storage location for templates
+#   - storage_pool: Storage pool for container disks
+#   - collabora_cores: Number of CPU cores
+#   - collabora_memory: RAM in MB
+#   - collabora_swap: Swap in MB (512)
+#   - collabora_disk_size: Disk size in GB
+#   - network_bridge: Network bridge name
+#   - collabora_ip_config: IP configuration (dhcp or static)
+#   - container_root_password: Root password for the container
+#   - ssh_public_key_path: Path to SSH public key
+#
+# Outputs:
+#   - Sets collabora_vmid fact with the assigned VMID
+#   - Sets collabora_container_ip fact with the container's IP address
+#
+# ============================================
+
+# ============================================
+# Step 1: Get Next Available VMID
+# ============================================
+
+- name: Get next available VMID from Proxmox API
+  # Query Proxmox for the next available VMID right before creation
+  # This ensures we get an actually available ID
+  ansible.builtin.uri:
+    url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/nextid"
+    method: GET
+    headers:
+      Authorization: "PVEAPIToken={{ proxmox_api_token_id }}={{ proxmox_api_token_secret }}"
+    validate_certs: no
+  register: next_vmid_response
+  delegate_to: localhost
+
+- name: Set Collabora VMID
+  # Extract and assign the VMID for this container
+  ansible.builtin.set_fact:
+    collabora_vmid: "{{ next_vmid_response.json.data | int }}"
+
+- name: Verify VMID is valid
+  # Sanity check - VMID should be >= 100
+  ansible.builtin.fail:
+    msg: |
+      ❌ Invalid VMID received from Proxmox: {{ collabora_vmid }}
+      
+      VMIDs should typically be >= 100.
+      This indicates a problem with the Proxmox API query.
+  when: collabora_vmid | int < 100
+  delegate_to: localhost
+
+# ============================================
+# Step 2: Display Container Information
+# ============================================
+
+- name: Display container creation information
+  ansible.builtin.debug:
+    msg: |
+      Creating Collabora LXC container with the following specifications:
+      - VMID: {{ collabora_vmid }}
+      - Hostname: {{ collabora_hostname }}
+      - Cores: {{ collabora_cores }}
+      - Memory: {{ collabora_memory }} MB
+      - Swap: {{ collabora_swap }} MB
+      - Disk: {{ collabora_disk_size }} GB
+      - Template: {{ lxc_template }}
+      - Storage: {{ storage_pool }}
+      - Network: {{ network_bridge }} ({{ collabora_ip_config }})
+
+- name: Check if SSH public key exists
+  # Verify the SSH public key file exists before trying to use it
+  # This key will be injected into the container for passwordless SSH access
+  ansible.builtin.stat:
+    path: "{{ ssh_public_key_path }}"
+  register: ssh_key_stat
+  delegate_to: localhost
+
+- name: Fail if SSH public key not found
+  ansible.builtin.fail:
+    msg: |
+      SSH public key not found at: {{ ssh_public_key_path }}
+      Please run setup_ssh.sh to generate SSH keys before running this playbook.
+  when: not ssh_key_stat.stat.exists
+
+- name: Read SSH public key
+  # Load the SSH public key content so we can inject it into the container
+  ansible.builtin.slurp:
+    path: "{{ ssh_public_key_path }}"
+  register: ssh_public_key_content
+  delegate_to: localhost
+
+- name: Set SSH public key fact
+  # Decode the base64-encoded key content
+  ansible.builtin.set_fact:
+    ssh_public_key: "{{ ssh_public_key_content.content | b64decode | trim }}"
+
+# ============================================
+# Step 2: Check if Container Already Exists
+# ============================================
+
+- name: Get list of all LXC containers on node
+  # Query Proxmox API for all LXC containers to check for name conflicts
+  ansible.builtin.uri:
+    url: "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ proxmox_node }}/lxc"
+    method: GET
+    headers:
+      Authorization: "PVEAPIToken={{ proxmox_api_token_id }}={{ proxmox_api_token_secret }}"
+    validate_certs: no
+  register: all_containers
+  delegate_to: localhost
+
+- name: Check if container with this hostname already exists
+  # Search through all containers to find one with matching hostname
+  ansible.builtin.set_fact:
+    existing_container_by_name: "{{ all_containers.json.data | selectattr('name', 'equalto', collabora_hostname) | list | first | default(none) }}"
+  delegate_to: localhost
+
+- name: Display error if container with same name exists
+  ansible.builtin.debug:
+    msg: |
+      ⚠️  WARNING: A container named '{{ collabora_hostname }}' already exists!
+      
+      Existing container details:
+      - VMID: {{ existing_container_by_name.vmid }}
+      - Name: {{ existing_container_by_name.name }}
+      - Status: {{ existing_container_by_name.status }}
+      
+      You have the following options:
+      1. Delete the existing container manually in Proxmox and re-run
+      2. Change 'collabora_hostname' in your config.yaml to a different name
+      3. Use the existing container (skip creation)
+  when: existing_container_by_name is not none
+
+- name: Fail if container with same name exists
+  ansible.builtin.fail:
+    msg: |
+      ❌ Cannot create container: A container named '{{ collabora_hostname }}' already exists (VMID {{ existing_container_by_name.vmid }})
+      
+      To resolve this:
+      
+      Option 1 - Delete the existing container:
+        1. In Proxmox UI, stop and delete VMID {{ existing_container_by_name.vmid }}
+        2. Re-run this playbook
+      
+      Option 2 - Use a different name:
+        1. Edit config.yaml
+        2. Change collabora_hostname to something else (e.g., "collabora2")
+        3. Re-run this playbook
+      
+      Option 3 - Use the existing container:
+        If VMID {{ existing_container_by_name.vmid }} is the container you want to configure,
+        you'll need to manually set up Collabora on it.
+  when: existing_container_by_name is not none
+  delegate_to: localhost
+
+- name: Check if container with this VMID already exists
+  # Also check if our auto-assigned VMID is already taken
+  # This is a secondary check - the hostname check above is primary
+  community.general.proxmox:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+    api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    validate_certs: no
+    node: "{{ proxmox_node }}"
+    vmid: "{{ collabora_vmid }}"
+    state: current
+  register: existing_container_by_vmid
+  failed_when: false
+  delegate_to: localhost
+
+- name: Display warning if VMID is taken (but different name)
+  ansible.builtin.debug:
+    msg: |
+      ⚠️  The auto-assigned VMID {{ collabora_vmid }} is already in use.
+      This shouldn't happen as we queried for next available VMID.
+      Will try to create anyway - Proxmox will assign a different VMID if needed.
+  when: 
+    - existing_container_by_vmid.status is defined 
+    - existing_container_by_vmid.status == "present"
+    - existing_container_by_name is none
+
+# ============================================
+# Step 3: Create LXC Container
+# ============================================
+
+- name: Create Collabora LXC container
+  # Create the container with all specified parameters
+  # The container is created as unprivileged for better security
+  # Nesting is enabled to support Docker for Collabora installation
+  community.general.proxmox:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+    api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    validate_certs: no
+    node: "{{ proxmox_node }}"
+    vmid: "{{ collabora_vmid }}"
+    hostname: "{{ collabora_hostname }}"
+    ostemplate: "{{ template_storage }}:vztmpl/{{ lxc_template }}"
+    cores: "{{ collabora_cores }}"
+    memory: "{{ collabora_memory }}"
+    swap: "{{ collabora_swap }}"
+    # Single disk for Collabora - it doesn't need separate data storage
+    disk: "{{ storage_pool }}:{{ collabora_disk_size }}"
+    # Network configuration
+    netif:
+      net0: "name=eth0,bridge={{ network_bridge }},ip={{ collabora_ip_config }},firewall=1"
+    # Security settings
+    unprivileged: yes
+    onboot: yes  # Start container automatically when Proxmox boots
+    # Authentication
+    password: "{{ container_root_password }}"
+    pubkey: "{{ ssh_public_key }}"
+    # Features
+    features:
+      - nesting=1  # Required for running Docker containers
+    state: present
+  register: container_create
+  delegate_to: localhost
+
+- name: Display container creation result
+  ansible.builtin.debug:
+    msg: "Collabora container created successfully with VMID {{ collabora_vmid }}"
+  when: container_create.changed
+
+# ============================================
+# Step 4: Start the Container
+# ============================================
+
+- name: Start Collabora container
+  # Start the container so it's ready for configuration
+  community.general.proxmox:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+    api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    validate_certs: no
+    node: "{{ proxmox_node }}"
+    vmid: "{{ collabora_vmid }}"
+    state: started
+  register: container_start
+  delegate_to: localhost
+
+- name: Wait for container to boot
+  # Give the container time to fully start up
+  # This ensures the network interface is up and SSH is ready
+  ansible.builtin.pause:
+    seconds: 30
+    prompt: "Waiting for container to boot and network to initialize..."
+
+# ============================================
+# Step 5: Get Container IP Address
+# ============================================
+
+- name: Check if using static IP or DHCP
+  ansible.builtin.set_fact:
+    using_dhcp: "{{ collabora_ip_config == 'dhcp' }}"
+  delegate_to: localhost
+
+- name: Extract static IP if configured
+  ansible.builtin.set_fact:
+    collabora_container_ip: "{{ collabora_ip_config.split(',')[0].split('/')[0] }}"
+  when: not using_dhcp
+  delegate_to: localhost
+
+- name: Get container config from Proxmox API for DHCP IP
+  ansible.builtin.uri:
+    url: "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ proxmox_node }}/lxc/{{ collabora_vmid }}/status/current"
+    method: GET
+    headers:
+      Authorization: "PVEAPIToken={{ proxmox_api_token_id }}={{ proxmox_api_token_secret }}"
+    validate_certs: no
+  register: container_status
+  when: using_dhcp
+  delegate_to: localhost
+  retries: 10
+  delay: 3
+  until: container_status.status == 200 and container_status.json.data.status == "running"
+
+- name: Wait for DHCP lease to be assigned
+  ansible.builtin.pause:
+    seconds: 10
+    prompt: "Waiting for DHCP IP assignment..."
+  when: using_dhcp
+
+- name: Get container network interfaces from Proxmox API
+  ansible.builtin.uri:
+    url: "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ proxmox_node }}/lxc/{{ collabora_vmid }}/interfaces"
+    method: GET
+    headers:
+      Authorization: "PVEAPIToken={{ proxmox_api_token_id }}={{ proxmox_api_token_secret }}"
+    validate_certs: no
+  register: container_interfaces
+  when: using_dhcp
+  delegate_to: localhost
+
+- name: Extract DHCP IP from interface data
+  ansible.builtin.set_fact:
+    collabora_container_ip: "{{ container_interfaces.json.data | selectattr('name', 'equalto', 'eth0') | map(attribute='inet') | first | regex_replace('/.*$', '') }}"
+  when: using_dhcp
+  delegate_to: localhost
+
+- name: Display container IP address
+  ansible.builtin.debug:
+    msg: |
+      Collabora container is running!
+      IP Address: {{ collabora_container_ip }}
+      IP Type: {{ 'DHCP' if using_dhcp else 'Static' }}
+      You can SSH to it with: ssh -i {{ ssh_private_key_path }} root@{{ collabora_container_ip }}
+
+- name: Fail if no IP address found
+  ansible.builtin.fail:
+    msg: |
+      Could not determine container IP address.
+      This might indicate a network configuration problem.
+      Please check the container's network settings in Proxmox.
+  when: collabora_container_ip is not defined or collabora_container_ip == ""
+
+# ============================================
+# Step 6: Wait for SSH to be Available
+# ============================================
+
+- name: Wait for SSH to become available on container
+  # Try to connect to SSH on the container
+  # This ensures the container is fully ready before we proceed
+  ansible.builtin.wait_for:
+    host: "{{ collabora_container_ip }}"
+    port: 22
+    delay: 5
+    timeout: 300
+    state: started
+  delegate_to: localhost
+
+- name: Test SSH connection to container
+  # Verify we can actually execute commands via SSH
+  ansible.builtin.command: ssh -i {{ ssh_private_key_path }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ collabora_container_ip }} "echo 'SSH connection successful'"
+  register: ssh_test
+  changed_when: false
+  delegate_to: localhost
+  # Retry a few times as SSH might not be fully ready
+  retries: 3
+  delay: 10
+  until: ssh_test.rc == 0
+
+# ============================================
+# Step 7: Set Container Facts for Later Use
+# ============================================
+
+- name: Add container to inventory
+  # Dynamically add the container to the 'collabora' group in inventory
+  # This allows subsequent roles to target it directly
+  ansible.builtin.add_host:
+    name: "{{ collabora_container_ip }}"
+    groups: collabora
+    ansible_host: "{{ collabora_container_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ ssh_private_key_path }}"
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+- name: Set Collabora container facts
+  # Store container information as facts for use by other roles
+  ansible.builtin.set_fact:
+    collabora_container_created: true
+    collabora_container_vmid: "{{ collabora_vmid }}"
+    collabora_container_ip: "{{ collabora_container_ip }}"
+    cacheable: yes
+
+- name: Container creation complete
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      ✅ Collabora Container Created Successfully
+      ============================================
+      
+      Container Details:
+      - VMID: {{ collabora_vmid }}
+      - Hostname: {{ collabora_hostname }}
+      - IP Address: {{ collabora_container_ip }}
+      - Disk: {{ collabora_disk_size }} GB
+      
+      The container is ready for Collabora Office installation.
+
+# ============================================
+# End of Create Collabora Container Role
+# ============================================
+

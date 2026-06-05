@@ -1,0 +1,518 @@
+---
+# ============================================
+# Configure NextCloud Role
+# ============================================
+#
+# This role installs and configures NextCloud on a Debian-based LXC container.
+# It sets up a complete LAMP stack and configures NextCloud for production use.
+#
+# Prerequisites:
+#   - Debian-based LXC container running and accessible via SSH
+#   - Container must have internet access for package downloads
+#   - Data directory mounted at /var/www/nextcloud/data
+#
+# Variables required (passed from main playbook):
+#   - nextcloud_domain: Domain or IP for NextCloud access
+#   - nextcloud_db_name: Database name
+#   - nextcloud_db_user: Database username
+#   - nextcloud_db_password: Database password
+#   - nextcloud_db_root_password: MariaDB root password
+#   - nextcloud_admin_user: NextCloud admin username
+#   - nextcloud_admin_password: NextCloud admin password
+#   - nextcloud_data_dir: Path to data directory (/var/www/nextcloud/data)
+#   - php_version: PHP version to install (e.g., "8.2")
+#   - nextcloud_version: NextCloud version (empty for latest)
+#
+# ============================================
+
+# ============================================
+# Step 1: System Preparation
+# ============================================
+
+- name: Update apt cache
+  # Ensure we have the latest package information
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600  # Cache valid for 1 hour
+  become: yes
+
+- name: Upgrade all packages to latest version
+  # Ensure the system is fully up to date for security
+  ansible.builtin.apt:
+    upgrade: dist
+    autoremove: yes
+    autoclean: yes
+  become: yes
+
+- name: Install required system packages
+  # Install basic utilities needed for the installation process
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - gnupg2
+      - ca-certificates
+      - apt-transport-https
+      - unzip
+      - sudo
+    state: present
+  become: yes
+
+# ============================================
+# Step 2: Install and Configure MariaDB
+# ============================================
+
+- name: Install MariaDB server
+  # MariaDB is the database backend for NextCloud
+  ansible.builtin.apt:
+    name:
+      - mariadb-server
+      - mariadb-client
+      - python3-pymysql  # Required for Ansible MySQL modules
+    state: present
+  become: yes
+
+- name: Start and enable MariaDB service
+  # Ensure MariaDB starts now and on boot
+  ansible.builtin.systemd:
+    name: mariadb
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Set MariaDB root password
+  # Secure the MariaDB installation by setting root password
+  community.mysql.mysql_user:
+    name: root
+    password: "{{ nextcloud_db_root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    state: present
+  become: yes
+  # Ignore errors if root password is already set
+  ignore_errors: yes
+
+- name: Remove anonymous MySQL users
+  # Remove insecure default anonymous users
+  community.mysql.mysql_user:
+    name: ''
+    host_all: yes
+    state: absent
+    login_user: root
+    login_password: "{{ nextcloud_db_root_password }}"
+  become: yes
+  ignore_errors: yes
+
+- name: Remove MySQL test database
+  # Remove the default test database
+  community.mysql.mysql_db:
+    name: test
+    state: absent
+    login_user: root
+    login_password: "{{ nextcloud_db_root_password }}"
+  become: yes
+  ignore_errors: yes
+
+- name: Create NextCloud database
+  # Create the database that NextCloud will use
+  community.mysql.mysql_db:
+    name: "{{ nextcloud_db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ nextcloud_db_root_password }}"
+    encoding: utf8mb4
+    collation: utf8mb4_general_ci
+  become: yes
+
+- name: Create NextCloud database user
+  # Create a dedicated database user for NextCloud
+  # Grant only the permissions needed for the NextCloud database
+  community.mysql.mysql_user:
+    name: "{{ nextcloud_db_user }}"
+    password: "{{ nextcloud_db_password }}"
+    priv: "{{ nextcloud_db_name }}.*:ALL"
+    host: localhost
+    state: present
+    login_user: root
+    login_password: "{{ nextcloud_db_root_password }}"
+  become: yes
+
+# ============================================
+# Step 3: Install and Configure Apache
+# ============================================
+
+- name: Install Apache web server
+  # Apache will serve the NextCloud web interface
+  ansible.builtin.apt:
+    name:
+      - apache2
+      - libapache2-mod-php
+    state: present
+  become: yes
+
+- name: Enable required Apache modules
+  # These modules are needed for NextCloud to function properly
+  community.general.apache2_module:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - rewrite   # URL rewriting for clean URLs
+    - headers   # HTTP header manipulation
+    - env       # Environment variable support
+    - dir       # Directory indexing
+    - mime      # MIME type support
+    - ssl       # SSL/TLS support (for future HTTPS setup)
+  become: yes
+  notify: restart apache
+
+- name: Start and enable Apache service
+  # Ensure Apache starts now and on boot
+  ansible.builtin.systemd:
+    name: apache2
+    state: started
+    enabled: yes
+  become: yes
+
+# ============================================
+# Step 4: Install PHP and Required Extensions
+# ============================================
+
+- name: Install PHP and required extensions
+  # NextCloud requires PHP with specific extensions for full functionality
+  ansible.builtin.apt:
+    name:
+      - "php{{ php_version }}"
+      - "php{{ php_version }}-cli"
+      - "php{{ php_version }}-common"
+      - "php{{ php_version }}-mysql"
+      - "php{{ php_version }}-zip"
+      - "php{{ php_version }}-gd"
+      - "php{{ php_version }}-mbstring"
+      - "php{{ php_version }}-curl"
+      - "php{{ php_version }}-xml"
+      - "php{{ php_version }}-bcmath"
+      - "php{{ php_version }}-intl"
+      - "php{{ php_version }}-imagick"
+      - "php{{ php_version }}-gmp"
+      - "php{{ php_version }}-apcu"
+      - "php{{ php_version }}-redis"
+      - libmagickcore-6.q16-6-extra  # Additional ImageMagick support
+    state: present
+  become: yes
+
+- name: Configure PHP settings for NextCloud
+  # Optimize PHP configuration for NextCloud performance and functionality
+  ansible.builtin.lineinfile:
+    path: "/etc/php/{{ php_version }}/apache2/php.ini"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backup: yes
+  loop:
+    - { regexp: '^memory_limit', line: 'memory_limit = 512M' }
+    - { regexp: '^upload_max_filesize', line: 'upload_max_filesize = 10G' }
+    - { regexp: '^post_max_size', line: 'post_max_size = 10G' }
+    - { regexp: '^max_execution_time', line: 'max_execution_time = 360' }
+    - { regexp: '^max_input_time', line: 'max_input_time = 360' }
+    - { regexp: '^date.timezone', line: 'date.timezone = UTC' }
+    - { regexp: '^opcache.enable=', line: 'opcache.enable=1' }
+    - { regexp: '^opcache.interned_strings_buffer', line: 'opcache.interned_strings_buffer=16' }
+    - { regexp: '^opcache.max_accelerated_files', line: 'opcache.max_accelerated_files=10000' }
+    - { regexp: '^opcache.memory_consumption', line: 'opcache.memory_consumption=128' }
+    - { regexp: '^opcache.save_comments', line: 'opcache.save_comments=1' }
+    - { regexp: '^opcache.revalidate_freq', line: 'opcache.revalidate_freq=1' }
+  become: yes
+  notify: restart apache
+
+# ============================================
+# Step 5: Download and Install NextCloud
+# ============================================
+
+- name: Check if NextCloud is already installed
+  # Avoid re-downloading if NextCloud is already present
+  ansible.builtin.stat:
+    path: /var/www/nextcloud/version.php
+  register: nextcloud_installed
+
+- name: Get latest NextCloud version if not specified
+  # Query the NextCloud download server for the latest stable version
+  ansible.builtin.uri:
+    url: https://download.nextcloud.com/server/releases/latest.tar.bz2
+    method: HEAD
+    follow_redirects: safe
+  register: nextcloud_latest
+  when: 
+    - not nextcloud_installed.stat.exists
+    - nextcloud_version == ""
+  delegate_to: localhost
+
+- name: Set NextCloud download URL
+  # Determine which version to download (latest or specified)
+  ansible.builtin.set_fact:
+    nextcloud_download_url: "{% if nextcloud_version != '' %}https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2{% else %}https://download.nextcloud.com/server/releases/latest.tar.bz2{% endif %}"
+  when: not nextcloud_installed.stat.exists
+
+- name: Download NextCloud
+  # Download the NextCloud archive to a temporary location
+  ansible.builtin.get_url:
+    url: "{{ nextcloud_download_url }}"
+    dest: /tmp/nextcloud.tar.bz2
+    mode: '0644'
+  become: yes
+  when: not nextcloud_installed.stat.exists
+
+- name: Extract NextCloud to /var/www
+  # Extract the archive to the web root
+  ansible.builtin.unarchive:
+    src: /tmp/nextcloud.tar.bz2
+    dest: /var/www/
+    remote_src: yes
+    owner: www-data
+    group: www-data
+  become: yes
+  when: not nextcloud_installed.stat.exists
+
+- name: Remove NextCloud download archive
+  # Clean up the temporary download file
+  ansible.builtin.file:
+    path: /tmp/nextcloud.tar.bz2
+    state: absent
+  become: yes
+  when: not nextcloud_installed.stat.exists
+
+# ============================================
+# Step 6: Configure Data Directory Permissions
+# ============================================
+
+- name: Ensure data directory exists
+  # Verify the data directory mount point is accessible
+  ansible.builtin.file:
+    path: "{{ nextcloud_data_dir }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0770'
+  become: yes
+
+- name: Set ownership of NextCloud directory
+  # Ensure Apache (www-data) can read and write all NextCloud files
+  ansible.builtin.file:
+    path: /var/www/nextcloud
+    owner: www-data
+    group: www-data
+    recurse: yes
+  become: yes
+
+# ============================================
+# Step 7: Create Apache Virtual Host
+# ============================================
+
+- name: Create NextCloud Apache configuration
+  # Configure Apache to serve NextCloud with proper settings
+  ansible.builtin.copy:
+    dest: /etc/apache2/sites-available/nextcloud.conf
+    content: |
+      <VirtualHost *:80>
+          ServerName {{ nextcloud_domain }}
+          DocumentRoot /var/www/nextcloud
+          
+          <Directory /var/www/nextcloud/>
+              Options +FollowSymlinks
+              AllowOverride All
+              Require all granted
+              
+              <IfModule mod_dav.c>
+                  Dav off
+              </IfModule>
+              
+              SetEnv HOME /var/www/nextcloud
+              SetEnv HTTP_HOME /var/www/nextcloud
+          </Directory>
+          
+          ErrorLog ${APACHE_LOG_DIR}/nextcloud_error.log
+          CustomLog ${APACHE_LOG_DIR}/nextcloud_access.log combined
+      </VirtualHost>
+    owner: root
+    group: root
+    mode: '0644'
+  become: yes
+  notify: restart apache
+
+- name: Disable default Apache site
+  # Remove the default Apache site to avoid conflicts
+  ansible.builtin.command: a2dissite 000-default.conf
+  become: yes
+  changed_when: false
+  ignore_errors: yes
+
+- name: Enable NextCloud Apache site
+  # Activate the NextCloud virtual host configuration
+  ansible.builtin.command: a2ensite nextcloud.conf
+  become: yes
+  changed_when: false
+  notify: restart apache
+
+# ============================================
+# Step 8: Run NextCloud Installation
+# ============================================
+
+- name: Check if NextCloud is already configured
+  # Check if the config file exists to determine if setup is complete
+  ansible.builtin.stat:
+    path: /var/www/nextcloud/config/config.php
+  register: nextcloud_config
+
+- name: Run NextCloud installation command
+  # Use NextCloud's command-line installer (occ)
+  # This configures the database connection and creates the admin user
+  ansible.builtin.command: >
+    sudo -u www-data php /var/www/nextcloud/occ maintenance:install
+    --database "mysql"
+    --database-name "{{ nextcloud_db_name }}"
+    --database-user "{{ nextcloud_db_user }}"
+    --database-pass "{{ nextcloud_db_password }}"
+    --admin-user "{{ nextcloud_admin_user }}"
+    --admin-pass "{{ nextcloud_admin_password }}"
+    --data-dir "{{ nextcloud_data_dir }}"
+  become: yes
+  when: not nextcloud_config.stat.exists
+  register: nextcloud_install
+  changed_when: nextcloud_install.rc == 0
+
+# ============================================
+# Step 9: Configure Trusted Domains
+# ============================================
+
+- name: Add trusted domain for NextCloud access
+  # Allow access to NextCloud via the specified domain/IP
+  # By default, NextCloud only trusts 'localhost'
+  ansible.builtin.command: >
+    sudo -u www-data php /var/www/nextcloud/occ config:system:set trusted_domains 1
+    --value="{{ nextcloud_domain }}"
+  become: yes
+  changed_when: false
+
+- name: Add container IP as trusted domain
+  # Also allow access via the container's IP address
+  ansible.builtin.command: >
+    sudo -u www-data php /var/www/nextcloud/occ config:system:set trusted_domains 2
+    --value="{{ ansible_default_ipv4.address }}"
+  become: yes
+  changed_when: false
+
+# ============================================
+# Step 10: Configure NextCloud Settings
+# ============================================
+
+- name: Set NextCloud overwrite.cli.url
+  # Set the base URL for command-line operations
+  ansible.builtin.command: >
+    sudo -u www-data php /var/www/nextcloud/occ config:system:set overwrite.cli.url
+    --value="http://{{ nextcloud_domain }}"
+  become: yes
+  changed_when: false
+
+- name: Configure NextCloud default phone region
+  # Set a default region for phone number formatting
+  ansible.builtin.command: >
+    sudo -u www-data php /var/www/nextcloud/occ config:system:set default_phone_region
+    --value="US"
+  become: yes
+  changed_when: false
+
+- name: Enable NextCloud memory caching with APCu
+  # Enable PHP memory caching for better performance
+  ansible.builtin.command: >
+    sudo -u www-data php /var/www/nextcloud/occ config:system:set memcache.local
+    --value="\OC\Memcache\APCu"
+  become: yes
+  changed_when: false
+
+# ============================================
+# Step 11: Set Up Background Jobs
+# ============================================
+
+- name: Configure NextCloud to use cron for background jobs
+  # Use system cron instead of AJAX for better reliability
+  ansible.builtin.command: >
+    sudo -u www-data php /var/www/nextcloud/occ background:cron
+  become: yes
+  changed_when: false
+
+- name: Add NextCloud cron job
+  # Schedule background tasks to run every 5 minutes
+  ansible.builtin.cron:
+    name: "NextCloud background jobs"
+    minute: "*/5"
+    user: www-data
+    job: "php /var/www/nextcloud/cron.php"
+    state: present
+  become: yes
+
+# ============================================
+# Step 12: Final Security Hardening
+# ============================================
+
+- name: Set proper permissions on NextCloud directories
+  # Ensure correct ownership and permissions for security
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: www-data
+    group: www-data
+    mode: "{{ item.mode }}"
+    recurse: "{{ item.recurse | default(false) }}"
+  loop:
+    - { path: '/var/www/nextcloud', mode: '0750', recurse: true }
+    - { path: '/var/www/nextcloud/apps', mode: '0750' }
+    - { path: '/var/www/nextcloud/config', mode: '0750' }
+    - { path: '/var/www/nextcloud/data', mode: '0750' }
+    - { path: "{{ nextcloud_data_dir }}", mode: '0770', recurse: true }
+  become: yes
+
+- name: Run NextCloud security scan
+  # Check for common security issues
+  ansible.builtin.command: sudo -u www-data php /var/www/nextcloud/occ security:scan
+  become: yes
+  register: security_scan
+  changed_when: false
+  failed_when: false
+
+# ============================================
+# Step 13: Display Installation Summary
+# ============================================
+
+- name: NextCloud installation complete
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      ✅ NextCloud Installation Complete!
+      ============================================
+      
+      Access your NextCloud instance at:
+      http://{{ nextcloud_domain }}
+      
+      Admin Credentials:
+      Username: {{ nextcloud_admin_user }}
+      Password: [stored securely]
+      
+      Database Information:
+      Database: {{ nextcloud_db_name }}
+      User: {{ nextcloud_db_user }}
+      
+      Data Directory: {{ nextcloud_data_dir }}
+      
+      Next Steps:
+      1. Access NextCloud via the URL above
+      2. Log in with your admin credentials
+      3. Complete the initial setup wizard (if prompted)
+      4. Configure Collabora Office integration (next role)
+      5. Consider setting up HTTPS with Let's Encrypt
+      
+      Important Security Notes:
+      - Change the default admin password after first login
+      - Set up HTTPS/SSL for production use
+      - Configure firewall rules as needed
+      - Review security & setup warnings in admin panel
+
+# ============================================
+# End of Configure NextCloud Role
+# ============================================
+

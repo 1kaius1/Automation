@@ -1,0 +1,354 @@
+---
+# ============================================
+# Proxmox API User Setup Playbook
+# ============================================
+#
+# This playbook creates a dedicated Proxmox API user with the minimum
+# required permissions for deploying NextCloud containers via Ansible.
+#
+# Usage:
+#   ansible-playbook setup_proxmox_api.yml
+#
+# This playbook will:
+# 1. Connect to your Proxmox host via SSH
+# 2. Create a custom role with minimal permissions
+# 3. Create an API user
+# 4. Generate an API token
+# 5. Display the credentials for use in deployment
+#
+# Prerequisites:
+# - Ansible installed with community.general collection
+# - SSH access to Proxmox host (root or sudo user)
+# - SSH key authentication configured OR password available
+#
+# After running this playbook, save the displayed API credentials.
+# You'll need them when running deploy_nextcloud.yml
+#
+# ============================================
+
+- name: Proxmox API User Setup
+  hosts: localhost
+  gather_facts: yes
+  
+  # ============================================
+  # Variable Prompts - API User Creation
+  # ============================================
+  # These prompts collect all information needed to create the API user
+  # This playbook ONLY handles API user creation
+  
+  vars_prompt:
+    # ========================================
+    # Proxmox SSH Connection Details
+    # ========================================
+    # We need SSH access to run commands directly on the Proxmox host
+    
+    - name: proxmox_ssh_host
+      prompt: |
+        
+        ============================================
+        Proxmox API User Setup
+        ============================================
+        
+        This playbook will create a dedicated API user on your Proxmox host.
+        
+        Enter Proxmox host IP or FQDN (for SSH connection)
+        Examples: 192.168.1.100 or proxmox.local
+      private: no
+    
+    - name: proxmox_ssh_user
+      prompt: |
+        Enter Proxmox SSH username
+        This user must have root privileges or sudo access
+        [default: root]
+      default: "root"
+      private: no
+    
+    - name: proxmox_ssh_password
+      prompt: |
+        Enter Proxmox SSH password
+        Leave blank if using SSH key authentication
+        (Input will be hidden)
+      private: yes
+    
+    - name: ssh_key_path
+      prompt: |
+        Enter path to SSH private key
+        Leave blank if using password authentication
+        [default: ~/.ssh/id_rsa]
+      default: "~/.ssh/id_rsa"
+      private: no
+    
+    # ========================================
+    # API User Configuration
+    # ========================================
+    # Define the API user that will be created
+    
+    - name: proxmox_api_username
+      prompt: |
+        
+        ============================================
+        API User Configuration
+        ============================================
+        
+        Enter username for the new Proxmox API user
+        This user will be created specifically for Ansible automation
+        [default: ansible]
+      default: "ansible"
+      private: no
+    
+    - name: proxmox_api_realm
+      prompt: |
+        Enter realm for API user
+        Proxmox default realm is 'pve'
+        [default: pve]
+      default: "pve"
+      private: no
+    
+    - name: proxmox_api_token_name
+      prompt: |
+        Enter name for the API token
+        This is just a label to identify the token
+        [default: automation-token]
+      default: "automation-token"
+      private: no
+  
+  # ============================================
+  # Pre-Tasks: Validate Environment
+  # ============================================
+  
+  pre_tasks:
+    - name: Display configuration summary
+      # Show the user what will be created before proceeding
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Configuration Summary
+          ============================================
+          
+          SSH Connection:
+          - Host: {{ proxmox_ssh_host }}
+          - User: {{ proxmox_ssh_user }}
+          - Auth: {{ 'Password' if proxmox_ssh_password != '' else 'SSH Key (' + ssh_key_path + ')' }}
+          
+          API User to Create:
+          - Username: {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+          - Token Name: {{ proxmox_api_token_name }}
+          - Full Token ID: {{ proxmox_api_username }}@{{ proxmox_api_realm }}!{{ proxmox_api_token_name }}
+          
+          Proceeding with API user creation...
+    
+    - name: Load role permissions from file
+      # Import the permissions configuration from proxmox_permissions.yaml
+      # This file defines what the API user will be allowed to do
+      ansible.builtin.include_vars:
+        file: proxmox_permissions.yaml
+    
+    - name: Verify SSH connectivity to Proxmox host
+      # Test that we can actually connect to the Proxmox host
+      # This prevents wasting time if credentials are wrong
+      ansible.builtin.wait_for:
+        host: "{{ proxmox_ssh_host }}"
+        port: 22
+        timeout: 10
+      delegate_to: localhost
+    
+    - name: Expand SSH key path if using key authentication
+      # Convert ~/.ssh/id_rsa to full path like /home/user/.ssh/id_rsa
+      # This is necessary because Ansible doesn't expand ~ automatically in all contexts
+      ansible.builtin.set_fact:
+        ssh_private_key_path: "{{ ssh_key_path | expanduser }}"
+      when: proxmox_ssh_password == ''
+    
+    - name: Verify SSH key exists if using key authentication
+      # Make sure the SSH key file actually exists before trying to use it
+      ansible.builtin.stat:
+        path: "{{ ssh_private_key_path }}"
+      register: ssh_key_stat
+      when: proxmox_ssh_password == ''
+      delegate_to: localhost
+    
+    - name: Fail if SSH key not found
+      # If the user said they're using a key but it doesn't exist, stop here
+      ansible.builtin.fail:
+        msg: |
+          SSH key not found at: {{ ssh_private_key_path }}
+          
+          Either:
+          1. Provide the correct path to your SSH key, or
+          2. Re-run the playbook and provide a password instead
+      when:
+        - proxmox_ssh_password == ''
+        - not ssh_key_stat.stat.exists
+  
+  # ============================================
+  # Tasks: Setup Dynamic Inventory
+  # ============================================
+  
+  tasks:
+    - name: Add Proxmox host to dynamic inventory
+      # Create an inventory entry for the Proxmox host so we can run a play against it
+      # This allows us to run the proxmox_setup role directly on the Proxmox server
+      ansible.builtin.add_host:
+        name: "{{ proxmox_ssh_host }}"
+        groups: proxmox_host
+        ansible_host: "{{ proxmox_ssh_host }}"
+        ansible_user: "{{ proxmox_ssh_user }}"
+        # Use password if provided, otherwise use SSH key
+        ansible_password: "{{ proxmox_ssh_password if proxmox_ssh_password != '' else omit }}"
+        ansible_ssh_private_key_file: "{{ ssh_private_key_path if proxmox_ssh_password == '' else omit }}"
+        ansible_python_interpreter: /usr/bin/python3
+        # Disable host key checking for automated deployments
+        # WARNING: In production, you may want to enable this for security
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    
+    - name: Cache variables for use in other plays
+      # Store variables with cacheable so they're available to subsequent plays
+      # These will be available via hostvars['localhost']
+      ansible.builtin.set_fact:
+        proxmox_ssh_host: "{{ proxmox_ssh_host }}"
+        proxmox_api_username: "{{ proxmox_api_username }}"
+        proxmox_api_realm: "{{ proxmox_api_realm }}"
+        proxmox_api_token_name: "{{ proxmox_api_token_name }}"
+        proxmox_api_role_name: "{{ proxmox_api_role_name }}"
+        proxmox_api_role_permissions: "{{ proxmox_api_role_permissions }}"
+        cacheable: yes
+
+# ============================================
+# Play 2: Execute Role on Proxmox Host
+# ============================================
+# This is a separate play that runs on the Proxmox host
+# We can't delegate include_role, so we need a dedicated play
+
+- name: Execute Proxmox Setup on Remote Host
+  hosts: proxmox_host
+  gather_facts: yes
+  
+  vars:
+    # Load the permissions configuration
+    proxmox_api_role_name: "{{ hostvars['localhost']['proxmox_api_role_name'] }}"
+    proxmox_api_role_permissions: "{{ hostvars['localhost']['proxmox_api_role_permissions'] }}"
+  
+  pre_tasks:
+    - name: Retrieve variables from localhost
+      # Get the variables passed from the previous play
+      ansible.builtin.set_fact:
+        proxmox_api_username: "{{ hostvars['localhost']['proxmox_api_username'] }}"
+        proxmox_api_realm: "{{ hostvars['localhost']['proxmox_api_realm'] }}"
+        proxmox_api_token_name: "{{ hostvars['localhost']['proxmox_api_token_name'] }}"
+  
+  roles:
+    # Execute the proxmox_setup role on the Proxmox host
+    # This role creates the API user, role, and token
+    - role: proxmox_setup
+
+# ============================================
+# Play 3: Save Credentials Locally
+# ============================================
+# This play runs back on localhost to save the credentials
+
+- name: Save API Credentials
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Retrieve generated credentials from Proxmox host
+      # Get the credentials that were generated by the proxmox_setup role
+      # These are stored as facts on the Proxmox host
+      ansible.builtin.set_fact:
+        generated_api_token_id: "{{ hostvars[groups['proxmox_host'][0]]['generated_api_token_id'] }}"
+        generated_api_token_secret: "{{ hostvars[groups['proxmox_host'][0]]['generated_api_token_secret'] }}"
+    
+    - name: Save API credentials for next playbook
+      # Store the generated credentials in a file that deploy_nextcloud.yaml can optionally read
+      # This makes it easy to run both playbooks in sequence without re-entering credentials
+      # 
+      # SECURITY WARNING: This file contains sensitive credentials!
+      # It should be protected with appropriate file permissions and deleted after use
+      ansible.builtin.copy:
+        content: |
+          # Proxmox API Credentials
+          # Generated by setup_proxmox_api.yaml on {{ ansible_date_time.iso8601 }}
+          # 
+          # SECURITY WARNING: This file contains sensitive credentials!
+          # Protect it with appropriate permissions (chmod 600) and delete after use.
+          # 
+          # These credentials can be used for the deploy_nextcloud.yaml playbook
+          
+          proxmox_api_token_id: "{{ generated_api_token_id }}"
+          proxmox_api_token_secret: "{{ generated_api_token_secret }}"
+        dest: "./.proxmox_credentials.yaml"
+        mode: '0600'
+    
+    - name: Display credential file location
+      # Let the user know where the credentials were saved
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Credentials Saved
+          ============================================
+          
+          API credentials have been saved to:
+          ./.proxmox_credentials.yaml
+          
+          This file will be automatically used by deploy_nextcloud.yaml
+          if you run it from the same directory.
+          
+          SECURITY NOTE: This file contains sensitive credentials!
+          - File permissions set to 0600 (owner read/write only)
+          - Delete this file after deployment is complete
+          - Or move it to a secure location for future use
+  
+  # ============================================
+  # Post-Tasks: Summary
+  # ============================================
+  
+  post_tasks:
+    - name: Retrieve variables for display
+      # Get the variables from the first play for the summary message
+      ansible.builtin.set_fact:
+        proxmox_ssh_host: "{{ hostvars['localhost']['proxmox_ssh_host'] }}"
+        proxmox_api_role_name: "{{ hostvars['localhost']['proxmox_api_role_name'] }}"
+        proxmox_api_username: "{{ hostvars['localhost']['proxmox_api_username'] }}"
+        proxmox_api_realm: "{{ hostvars['localhost']['proxmox_api_realm'] }}"
+        proxmox_api_token_name: "{{ hostvars['localhost']['proxmox_api_token_name'] }}"
+    
+    - name: Display next steps
+      # Guide the user on what to do next
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ✅ API User Setup Complete!
+          ============================================
+          
+          Your Proxmox API user has been created successfully.
+          
+          📋 What was created:
+          
+          - Custom Role: {{ proxmox_api_role_name }}
+          - API User: {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+          - API Token: {{ proxmox_api_token_name }}
+          - Credentials File: ./.proxmox_credentials.yaml
+          
+          🚀 Next Steps:
+          
+          1. Verify the credentials work by running:
+             curl -k -H "Authorization: PVEAPIToken={{ generated_api_token_id }}={{ generated_api_token_secret }}" \
+               https://{{ proxmox_ssh_host }}:8006/api2/json/nodes
+          
+          2. Run the NextCloud deployment:
+             ansible-playbook deploy_nextcloud.yaml
+          
+          3. The deployment will automatically use the saved credentials
+          
+          4. After deployment completes, securely delete the credentials file:
+             shred -u ./.proxmox_credentials.yaml
+          
+          📚 Documentation:
+          
+          For more information, see README.md
+          
+          ============================================
+
+# ============================================
+# End of Playbook
+# ============================================

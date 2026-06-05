@@ -1,0 +1,383 @@
+---
+# ============================================
+# Configure Collabora Office Role
+# ============================================
+#
+# This role installs and configures Collabora Office Online on a Debian-based
+# LXC container using Docker. Collabora provides document editing capabilities
+# for NextCloud.
+#
+# Prerequisites:
+#   - Debian-based LXC container running and accessible via SSH
+#   - Container must have internet access for package downloads
+#   - Container must have nesting enabled for Docker
+#   - NextCloud container must be accessible from this container
+#
+# Variables required (passed from main playbook):
+#   - collabora_domain: Domain or IP for Collabora access
+#   - nextcloud_domain: Domain or IP of NextCloud instance
+#   - nextcloud_container_ip: IP address of NextCloud container
+#
+# ============================================
+
+# ============================================
+# Step 1: System Preparation
+# ============================================
+
+- name: Update apt cache
+  # Ensure we have the latest package information
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600  # Cache valid for 1 hour
+  become: yes
+
+- name: Upgrade all packages to latest version
+  # Ensure the system is fully up to date for security
+  ansible.builtin.apt:
+    upgrade: dist
+    autoremove: yes
+    autoclean: yes
+  become: yes
+
+- name: Install required system packages
+  # Install basic utilities needed for Docker installation
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - apt-transport-https
+    state: present
+  become: yes
+
+# ============================================
+# Step 2: Install Docker
+# ============================================
+
+- name: Create keyrings directory for Docker GPG key
+  # Docker requires its GPG key to verify package signatures
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Add Docker GPG key
+  # Download and install Docker's official GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+  become: yes
+
+- name: Get system architecture
+  # Determine the system architecture for Docker repository URL
+  ansible.builtin.command: dpkg --print-architecture
+  register: system_arch
+  changed_when: false
+
+- name: Get distribution codename
+  # Get the Debian/Ubuntu codename (e.g., bookworm, jammy)
+  ansible.builtin.command: lsb_release -cs
+  register: distro_codename
+  changed_when: false
+
+- name: Add Docker repository
+  # Add Docker's official APT repository to sources list
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ system_arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ distro_codename.stdout }} stable"
+    state: present
+    filename: docker
+  become: yes
+
+- name: Update apt cache after adding Docker repository
+  ansible.builtin.apt:
+    update_cache: yes
+  become: yes
+
+- name: Install Docker packages
+  # Install Docker Engine, CLI, and containerd
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+  become: yes
+
+- name: Start and enable Docker service
+  # Ensure Docker starts now and on boot
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Verify Docker installation
+  # Test that Docker is working correctly
+  ansible.builtin.command: docker --version
+  register: docker_version
+  changed_when: false
+
+- name: Display Docker version
+  ansible.builtin.debug:
+    msg: "Docker installed successfully: {{ docker_version.stdout }}"
+
+# ============================================
+# Step 3: Configure Firewall (if ufw is present)
+# ============================================
+
+- name: Check if UFW is installed
+  # Check for the Uncomplicated Firewall
+  ansible.builtin.command: which ufw
+  register: ufw_check
+  changed_when: false
+  failed_when: false
+
+- name: Allow Collabora port through firewall
+  # Open port 9980 for Collabora if UFW is active
+  community.general.ufw:
+    rule: allow
+    port: '9980'
+    proto: tcp
+  become: yes
+  when: ufw_check.rc == 0
+
+# ============================================
+# Step 4: Pull Collabora Docker Image
+# ============================================
+
+- name: Pull Collabora Office Docker image
+  # Download the official Collabora Online Docker image
+  # This is the CODE (Collabora Online Development Edition) version
+  community.docker.docker_image:
+    name: collabora/code
+    tag: latest
+    source: pull
+  become: yes
+
+# ============================================
+# Step 5: Stop Existing Collabora Container (if any)
+# ============================================
+
+- name: Check if Collabora container is already running
+  # Check for any existing Collabora container
+  community.docker.docker_container_info:
+    name: collabora
+  register: collabora_container_info
+  become: yes
+  ignore_errors: yes
+
+- name: Stop and remove existing Collabora container
+  # Remove any existing container to ensure clean deployment
+  community.docker.docker_container:
+    name: collabora
+    state: absent
+  become: yes
+  when: collabora_container_info.exists is defined and collabora_container_info.exists
+
+# ============================================
+# Step 6: Start Collabora Container
+# ============================================
+
+- name: Escape dots in NextCloud domain for regex
+  # Collabora uses regex to validate allowed domains
+  # We need to escape dots so they're treated literally in the regex
+  ansible.builtin.set_fact:
+    nextcloud_domain_escaped: "{{ nextcloud_domain | regex_replace('\\.', '\\\\.') }}"
+
+- name: Start Collabora Office container
+  # Run Collabora as a Docker container with appropriate configuration
+  community.docker.docker_container:
+    name: collabora
+    image: collabora/code:latest
+    state: started
+    restart_policy: unless-stopped
+    # Port mapping: host port 9980 -> container port 9980
+    ports:
+      - "9980:9980"
+    # Environment variables configure Collabora's behavior
+    env:
+      # Domain allowed to connect to Collabora (escaped for regex)
+      # Multiple domains can be separated by pipes: domain1\\.com|domain2\\.com
+      domain: "{{ nextcloud_domain_escaped }}"
+      # Collabora admin console username
+      username: "admin"
+      # Collabora admin console password (generate random or use provided)
+      password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # Extra parameters for Collabora configuration
+      extra_params: "--o:ssl.enable=false --o:ssl.termination=true"
+    # Capabilities needed for Collabora to function properly
+    capabilities:
+      - MKNOD
+    # Resource limits to prevent runaway containers
+    memory: "2g"
+    # Health check to ensure Collabora is responsive
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9980/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+  become: yes
+  register: collabora_container
+
+- name: Display Collabora container status
+  ansible.builtin.debug:
+    msg: "Collabora container started successfully"
+  when: collabora_container.changed
+
+# ============================================
+# Step 7: Wait for Collabora to be Ready
+# ============================================
+
+- name: Wait for Collabora to be ready
+  # Collabora takes some time to fully initialize
+  # Wait until it responds to HTTP requests
+  ansible.builtin.uri:
+    url: "http://{{ collabora_domain }}:9980/"
+    method: GET
+    status_code: 200
+  register: collabora_ready
+  until: collabora_ready.status == 200
+  retries: 12
+  delay: 10
+  ignore_errors: yes
+
+- name: Display warning if Collabora not responding
+  ansible.builtin.debug:
+    msg: |
+      WARNING: Collabora may still be starting up.
+      If it doesn't respond after a few minutes, check container logs:
+      docker logs collabora
+  when: collabora_ready.failed | default(false)
+
+# ============================================
+# Step 8: Configure NextCloud to Use Collabora
+# ============================================
+
+- name: Check if NextCloud is accessible
+  # Verify we can reach the NextCloud instance
+  ansible.builtin.uri:
+    url: "http://{{ nextcloud_domain }}"
+    method: GET
+    status_code: [200, 302, 303]
+  register: nextcloud_check
+  ignore_errors: yes
+  delegate_to: localhost
+
+- name: Display NextCloud connection instructions
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      NextCloud Collabora Configuration Required
+      ============================================
+      
+      Collabora Office is now running, but you need to complete
+      the configuration in NextCloud:
+      
+      1. Log into NextCloud as admin: http://{{ nextcloud_domain }}
+      
+      2. Go to: Settings → Administration → Office
+      
+      3. Install the "Nextcloud Office" app if not already installed
+         (formerly called "Collabora Online")
+      
+      4. In the Office settings, select "Use your own server"
+      
+      5. Enter the Collabora server URL:
+         http://{{ collabora_container_ip }}:9980
+      
+      6. Click "Save"
+      
+      7. Test the connection - you should see a green checkmark
+      
+      8. Try creating or editing a document to verify it works
+      
+      IMPORTANT NOTES:
+      - If using domain names, ensure DNS is properly configured
+      - For production, set up HTTPS/SSL for both NextCloud and Collabora
+      - The Collabora admin console is at: http://{{ collabora_domain }}:9980/browser/dist/admin/admin.html
+        Username: admin
+        Password: [shown below]
+
+- name: Get Collabora admin password from container
+  # Retrieve the admin password we set earlier
+  ansible.builtin.command: docker inspect collabora --format='{% raw %}{{.Config.Env}}{% endraw %}'
+  register: collabora_env
+  changed_when: false
+  become: yes
+
+- name: Parse Collabora admin password
+  # Extract the password from the environment variables
+  ansible.builtin.set_fact:
+    collabora_admin_password: "{{ collabora_env.stdout | regex_search('password=([^ \\]]+)', '\\1') | first }}"
+  when: collabora_env.stdout is defined
+
+# ============================================
+# Step 9: Verify Container is Running
+# ============================================
+
+- name: Get Collabora container status
+  community.docker.docker_container_info:
+    name: collabora
+  register: final_collabora_status
+  become: yes
+
+- name: Fail if container is not running
+  ansible.builtin.fail:
+    msg: |
+      Collabora container failed to start properly.
+      Check logs with: docker logs collabora
+  when: final_collabora_status.container.State.Running is not defined or not final_collabora_status.container.State.Running
+
+# ============================================
+# Step 10: Display Installation Summary
+# ============================================
+
+- name: Collabora installation complete
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      ✅ Collabora Office Installation Complete!
+      ============================================
+      
+      Collabora Office Details:
+      - Container: collabora
+      - Access URL: http://{{ collabora_domain }}:9980
+      - Admin Console: http://{{ collabora_domain }}:9980/browser/dist/admin/admin.html
+      - Admin Username: admin
+      - Admin Password: {{ collabora_admin_password | default('[check container env]') }}
+      - Allowed Domains: {{ nextcloud_domain }}
+      
+      Container Status:
+      - State: {{ final_collabora_status.container.State.Status }}
+      - Image: {{ final_collabora_status.container.Config.Image }}
+      - Started: {{ final_collabora_status.container.State.StartedAt }}
+      
+      NextCloud Integration:
+      To complete the setup, configure NextCloud to use this Collabora server:
+      1. Install "Nextcloud Office" app in NextCloud
+      2. Go to Settings → Office
+      3. Enter server URL: http://{{ collabora_container_ip }}:9980
+      4. Save and test the connection
+      
+      Useful Commands:
+      - View logs: docker logs collabora
+      - Restart: docker restart collabora
+      - Stop: docker stop collabora
+      - Start: docker start collabora
+      
+      Next Steps:
+      1. Complete NextCloud integration (see instructions above)
+      2. Test document editing by creating a new document in NextCloud
+      3. Set up HTTPS/SSL for production use
+      4. Consider setting up a reverse proxy for cleaner URLs
+
+# ============================================
+# End of Configure Collabora Role
+# ============================================
+

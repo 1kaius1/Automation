@@ -1,0 +1,904 @@
+---
+# ============================================
+# NextCloud Deployment Playbook
+# ============================================
+#
+# This playbook automates the complete deployment of NextCloud and Collabora
+# Office on Proxmox LXC containers.
+#
+# Usage:
+#   ansible-playbook deploy_nextcloud.yaml
+#
+# The playbook will prompt you for all required information including:
+# - Proxmox connection details and API credentials
+# - Container specifications
+# - Credentials for databases and admin accounts
+# - Network configuration
+#
+# Prerequisites:
+# - Ansible installed with community.general collection
+# - Proxmox API user with appropriate permissions
+#   (Run setup_proxmox_api.yaml first if you don't have one)
+# - SSH keys generated in ./ssh_keys/ directory
+#   (Run ./setup_ssh.sh if you don't have these)
+# - LXC template downloaded in Proxmox
+#
+# ============================================
+
+- name: NextCloud and Collabora Deployment
+  hosts: localhost
+  gather_facts: yes
+  
+  # ============================================
+  # Variable Prompts
+  # ============================================
+  # All required information is collected upfront through interactive prompts
+  # This section ONLY asks for deployment-related configuration
+  # API user creation is handled by the separate setup_proxmox_api.yaml playbook
+  # 
+  # NOTE: If config.yaml exists and is passed with -e @config.yaml,
+  # those variables will be loaded BEFORE prompts, so you won't be prompted for them.
+  # Deploy.sh automatically does this when config.yaml exists.
+  
+  vars_prompt:
+    # ========================================
+    # Proxmox Connection Details
+    # ========================================
+    
+    # COMMENTED OUT FOR TESTING - Using hardcoded values in vars: section
+    # Uncomment these and remove hardcoded values after testing
+    
+    #- name: proxmox_api_host
+    #  prompt: |
+    #    
+    #    ============================================
+    #    NextCloud Deployment on Proxmox
+    #    ============================================
+    #    
+    #    This playbook will deploy NextCloud and Collabora Office
+    #    as LXC containers on your Proxmox server.
+    #    
+    #    ============================================
+    #    Proxmox Connection
+    #    ============================================
+    #    
+    #    Enter your Proxmox host (IP address or FQDN only, no https:// or port)
+    #    Examples: 192.168.1.100 or proxmox.local
+    #  private: no
+    
+    #- name: proxmox_node
+    #  prompt: "Enter your Proxmox node name (visible in Proxmox web UI) [default: pve]"
+    #  default: "pve"
+    #  private: no
+    
+    #- name: proxmox_api_token_id
+    #  prompt: |
+    #    
+    #    ============================================
+    #    API Credentials
+    #    ============================================
+    #    
+    #    Enter your Proxmox API Token ID (format: user@realm!token-name)
+    #    Example: ansible@pve!automation-token
+    #    
+    #    If you don't have API credentials yet, press Ctrl+C to cancel
+    #    and run: ansible-playbook setup_proxmox_api.yaml
+    #  private: no
+    
+    #- name: proxmox_api_token_secret
+    #  prompt: "Enter your Proxmox API Token Secret (the UUID value)"
+    #  private: yes
+    
+    # ========================================
+    # Storage Configuration
+    # ========================================
+    
+    - name: storage_pool
+      prompt: |
+        
+        ============================================
+        Storage Configuration
+        ============================================
+        
+        Enter your Proxmox LVM-Thin storage pool name
+        Example: pool1
+        
+        To see available storage, log into Proxmox UI:
+        Datacenter → Storage
+      private: no
+    
+    - name: template_storage
+      prompt: "Enter the Proxmox storage location for LXC templates [default: local]"
+      default: "local"
+      private: no
+    
+    - name: lxc_template
+      prompt: |
+        Enter LXC template filename
+        Examples:
+          - Debian 12: debian-12-standard_12.2-1_amd64.tar.zst
+          - Rocky Linux 9: rockylinux-9-default_20230607_amd64.tar.xz
+        
+        To see available templates, run on Proxmox:
+        pveam list local
+      private: no
+    
+    # ========================================
+    # Container Resources
+    # ========================================
+    
+    - name: nextcloud_cores
+      prompt: |
+        
+        ============================================
+        NextCloud Container Resources
+        ============================================
+        
+        Enter number of CPU cores for NextCloud [default: 2]
+      default: "2"
+      private: no
+    
+    - name: nextcloud_memory
+      prompt: "Enter memory for NextCloud in MB [default: 2048]"
+      default: "2048"
+      private: no
+    
+    - name: nextcloud_root_disk_size
+      prompt: "Enter root disk size for NextCloud in GB [default: 16]"
+      default: "16"
+      private: no
+    
+    - name: nextcloud_data_disk_size
+      prompt: "Enter data disk size for NextCloud user files in GB [default: 200]"
+      default: "200"
+      private: no
+    
+    - name: collabora_cores
+      prompt: |
+        
+        ============================================
+        Collabora Container Resources
+        ============================================
+        
+        Enter number of CPU cores for Collabora [default: 2]"
+      default: "2"
+      private: no
+    
+    - name: collabora_memory
+      prompt: "Enter memory for Collabora in MB [default: 2048]"
+      default: "2048"
+      private: no
+    
+    - name: collabora_disk_size
+      prompt: "Enter disk size for Collabora in GB [default: 12]"
+      default: "12"
+      private: no
+    
+    # ========================================
+    # Network Configuration
+    # ========================================
+    
+    - name: network_bridge
+      prompt: |
+        
+        ============================================
+        Network Configuration
+        ============================================
+        
+        Enter network bridge name [default: vmbr0]
+      default: "vmbr0"
+      private: no
+    
+    - name: nextcloud_ip_config
+      prompt: |
+        Enter IP configuration for NextCloud
+        Use 'dhcp' for automatic, or specify static like '192.168.1.100/24,gw=192.168.1.1'
+        [default: dhcp]
+      default: "dhcp"
+      private: no
+    
+    - name: collabora_ip_config
+      prompt: |
+        Enter IP configuration for Collabora
+        Use 'dhcp' for automatic, or specify static like '192.168.1.101/24,gw=192.168.1.1'
+        [default: dhcp]
+      default: "dhcp"
+      private: no
+    
+    # ========================================
+    # Credentials
+    # ========================================
+    
+    - name: container_root_password
+      prompt: |
+        
+        ============================================
+        Container Credentials
+        ============================================
+        
+        Enter root password for LXC containers (will be used for both containers)
+        Use a strong password from your password manager
+      private: yes
+    
+    - name: nextcloud_db_name
+      prompt: |
+        
+        ============================================
+        Database Configuration
+        ============================================
+        
+        Enter NextCloud database name [default: nextcloud]
+      default: "nextcloud"
+      private: no
+    
+    - name: nextcloud_db_user
+      prompt: "Enter NextCloud database username [default: nextcloud]"
+      default: "nextcloud"
+      private: no
+    
+    - name: nextcloud_db_password
+      prompt: |
+        Enter NextCloud database user password
+        Generate a strong random password
+      private: yes
+    
+    - name: nextcloud_db_root_password
+      prompt: |
+        Enter MariaDB root password
+        Generate a strong random password
+      private: yes
+    
+    - name: nextcloud_admin_user
+      prompt: |
+        
+        ============================================
+        NextCloud Admin Account
+        ============================================
+        
+        Enter NextCloud admin username [default: admin]
+      default: "admin"
+      private: no
+    
+    - name: nextcloud_admin_password
+      prompt: |
+        Enter NextCloud admin password
+        This will be your login password for the NextCloud web interface
+      private: yes
+    
+    # ========================================
+    # Domain Configuration
+    # ========================================
+    
+    - name: nextcloud_domain
+      prompt: |
+        
+        ============================================
+        Domain Configuration
+        ============================================
+        
+        Enter domain or IP for NextCloud
+        Examples: nextcloud.mydomain.com or 192.168.1.100
+      private: no
+    
+    - name: collabora_domain
+      prompt: |
+        Enter domain or IP for Collabora
+        Examples: collabora.mydomain.com or 192.168.1.101
+      private: no
+  
+  # ============================================
+  # Variables
+  # ============================================
+  
+  vars:
+    # TEMPORARY HARDCODED VALUES FOR TESTING
+    # TODO: Remove these and uncomment vars_prompt entries after testing
+    proxmox_api_token_id: "ansible@pve!automation-token"
+    proxmox_api_token_secret: "YOUR-UUID-SECRET-HERE"
+    proxmox_api_host: "YOUR-PROXMOX-IP-HERE"
+    proxmox_node: "pve"
+    
+    # Fixed variables - these can be customized but have sensible defaults
+    nextcloud_swap: 512           # Swap space in MB for NextCloud container
+    collabora_swap: 512           # Swap space in MB for Collabora container
+    php_version: "8.2"            # PHP version to install
+    nextcloud_version: ""         # Empty = latest stable version
+    nextcloud_data_dir: "/var/www/nextcloud/data"  # Where user files are stored
+    nextcloud_hostname: "nextcloud"  # Container hostname
+    collabora_hostname: "collabora"  # Container hostname
+    
+    # SSH key paths (relative to playbook directory)
+    # These keys are used to access the containers after creation
+    ssh_private_key_path: "{{ playbook_dir }}/ssh_keys/id_ed25519"
+    ssh_public_key_path: "{{ playbook_dir }}/ssh_keys/id_ed25519.pub"
+  
+  # ============================================
+  # Pre-Tasks: Validation
+  # ============================================
+  # Before starting deployment, validate that all prerequisites are met
+  # This prevents wasting time if something is misconfigured
+  
+  pre_tasks:
+    - name: Display deployment overview
+      # Show the user a summary of what's about to be deployed
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          NextCloud Deployment Starting
+          ============================================
+          
+          This playbook will deploy:
+          - NextCloud on LXC container ({{ nextcloud_cores }} cores, {{ nextcloud_memory }}MB RAM)
+          - Collabora Office on LXC container ({{ collabora_cores }} cores, {{ collabora_memory }}MB RAM)
+          
+          Target Proxmox: {{ proxmox_api_host }} (node: {{ proxmox_node }})
+          Storage Pool: {{ storage_pool }}
+          
+          Validating prerequisites...
+    
+    # ========================================
+    # Sanitize API Token ID Input
+    # ========================================
+    # Remove any quotes that might have been entered with the token ID
+    # This handles cases where users enter 'token' or "token" to escape special chars
+    
+    - name: Sanitize API token ID (remove quotes)
+      ansible.builtin.set_fact:
+        proxmox_api_token_id: "{{ proxmox_api_token_id | regex_replace(\"^['\\\"]|['\\\"]$\", '') }}"
+      delegate_to: localhost
+    
+    - name: DEBUG - Display sanitized token ID
+      ansible.builtin.debug:
+        msg: |
+          🔍 Token ID After Sanitization:
+          Raw value: {{ proxmox_api_token_id }}
+          Length: {{ proxmox_api_token_id | length }}
+          Has @: {{ '@' in proxmox_api_token_id }}
+          Has !: {{ '!' in proxmox_api_token_id }}
+          Split result: {{ proxmox_api_token_id.split('!') if '!' in proxmox_api_token_id else 'NO EXCLAMATION MARK FOUND' }}
+      delegate_to: localhost
+    
+    - name: Validate token ID format
+      ansible.builtin.fail:
+        msg: |
+          ❌ Invalid API Token ID format!
+          
+          Your token ID: {{ proxmox_api_token_id }}
+          
+          Required format: username@realm!tokenname
+          Example: ansible@pve!automation-token
+          
+          The token ID must contain:
+          - An @ symbol (separating user and realm)
+          - An ! symbol (separating user@realm and token name)
+          
+          Please check your token ID and try again.
+      when: "'@' not in proxmox_api_token_id or '!' not in proxmox_api_token_id"
+      delegate_to: localhost
+    
+    # ========================================
+    # Validation: Check for Saved Credentials
+    # ========================================
+    # If setup_proxmox_api.yaml was run, it may have saved credentials
+    # We check for this file and can optionally use those credentials
+    
+    - name: Check if saved API credentials exist
+      # Look for the credentials file created by setup_proxmox_api.yaml
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/.proxmox_credentials.yaml"
+      register: saved_credentials_check
+      delegate_to: localhost
+    
+    - name: Load saved API credentials if they exist
+      # If credentials file exists, load it as variables
+      # This allows seamless transition from setup to deployment
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/.proxmox_credentials.yaml"
+      when: saved_credentials_check.stat.exists
+      # Note: If user provided credentials via vars_prompt, those take precedence
+      # because vars_prompt variables are set before include_vars
+    
+    - name: Notify if using saved credentials
+      # Let the user know we found and are using saved credentials
+      ansible.builtin.debug:
+        msg: |
+          ℹ️  Found saved API credentials from setup_proxmox_api.yaml
+          Using these credentials for deployment.
+          
+          If you want to use different credentials, delete .proxmox_credentials.yaml
+          and re-run this playbook.
+      when: saved_credentials_check.stat.exists
+    
+    # ========================================
+    # Validation: SSH Keys
+    # ========================================
+    # SSH keys are required to access the containers after creation
+    # These should be generated by running ./setup_ssh.sh
+    
+    - name: Check if SSH private key exists
+      ansible.builtin.stat:
+        path: "{{ ssh_private_key_path }}"
+      register: ssh_private_key_check
+      delegate_to: localhost
+    
+    - name: Check if SSH public key exists
+      ansible.builtin.stat:
+        path: "{{ ssh_public_key_path }}"
+      register: ssh_public_key_check
+      delegate_to: localhost
+    
+    - name: Fail if SSH keys are missing
+      # SSH keys are essential - we can't proceed without them
+      ansible.builtin.fail:
+        msg: |
+          ❌ SSH keys not found!
+          
+          Expected locations:
+            Private key: {{ ssh_private_key_path }}
+            Public key: {{ ssh_public_key_path }}
+          
+          SSH keys are required to access the containers after creation.
+          
+          To generate SSH keys, run:
+            ./Deploy.sh
+          
+          Or manually create them:
+            mkdir -p ssh_keys
+            ssh-keygen -t ed25519 -f ssh_keys/id_ed25519 -N ""
+      when: not ssh_private_key_check.stat.exists or not ssh_public_key_check.stat.exists
+    
+    - name: Read SSH public key content
+      # Load the public key file content to pass to containers
+      ansible.builtin.slurp:
+        src: "{{ ssh_public_key_path }}"
+      register: ssh_public_key_file
+      delegate_to: localhost
+    
+    - name: Set SSH public key fact
+      # Decode the base64 content and store as a fact
+      ansible.builtin.set_fact:
+        ssh_public_key: "{{ ssh_public_key_file.content | b64decode | trim }}"
+      delegate_to: localhost
+    
+    # ========================================
+    # Validation: Proxmox API Connection
+    # ========================================
+    # Test that we can connect to Proxmox with the provided credentials
+    # This catches authentication issues early
+    
+    - name: DEBUG - Display token ID value
+      ansible.builtin.debug:
+        msg: |
+          🔍 DEBUG: Checking proxmox_api_token_id value
+          Value entered: {{ proxmox_api_token_id }}
+          Length: {{ proxmox_api_token_id | length }}
+          Contains '!': {{ '!' in proxmox_api_token_id }}
+          Split by '!': {{ proxmox_api_token_id.split('!') }}
+      delegate_to: localhost
+    
+    - name: Test Proxmox API connection
+      # Use the community.general.proxmox module to test connectivity
+      # This validates: host reachability, credentials, and node name
+      community.general.proxmox:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+        api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        validate_certs: no
+        node: "{{ proxmox_node }}"
+        state: current
+      register: proxmox_connection
+      failed_when: false
+      delegate_to: localhost
+    
+    - name: Fail if Proxmox API connection failed
+      # If we can't connect, show a helpful error message
+      ansible.builtin.fail:
+        msg: |
+          ❌ Failed to connect to Proxmox API at {{ proxmox_api_host }}
+          
+          Please verify:
+          1. The Proxmox host is reachable from this machine
+          2. The Proxmox host is listening on port 8006 (default API port)
+          3. The API token ID is correct (format: user@realm!token-name)
+          4. The API token secret is correct
+          5. The Proxmox node name '{{ proxmox_node }}' is correct
+          
+          Error details: {{ proxmox_connection.msg | default('Connection failed') }}
+          
+          If you don't have API credentials yet, run:
+            ansible-playbook setup_proxmox_api.yaml
+      when: proxmox_connection.failed | default(false)
+    
+    # ========================================
+    # Validation: Storage Pool
+    # ========================================
+    # Verify the specified storage pool exists on Proxmox
+    # We need this to create container disks
+    
+    - name: Check if storage pool exists
+      # SSH to Proxmox and query storage status
+      # grep looks for our specific storage pool name
+      ansible.builtin.command: >
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+        root@{{ proxmox_api_host }}
+        "pvesm status | grep -w {{ storage_pool }}"
+      register: storage_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+    
+    - name: Fail if storage pool not found
+      # Storage pool must exist or containers can't be created
+      ansible.builtin.fail:
+        msg: |
+          ❌ Storage pool '{{ storage_pool }}' not found on Proxmox host.
+          
+          Available storage can be viewed:
+          - Proxmox UI: Datacenter → Storage
+          - Command line: ssh root@{{ proxmox_api_host }} "pvesm status"
+          
+          Common storage pool names: local-lvm, pool1, data
+      when: storage_check.rc != 0
+    
+    # ========================================
+    # Validation: LXC Template
+    # ========================================
+    # Verify the specified LXC template has been downloaded
+    # Templates must be available before containers can be created
+    
+    - name: Check if LXC template exists
+      # SSH to Proxmox and list templates in the specified storage
+      # grep looks for our specific template filename
+      ansible.builtin.command: >
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+        root@{{ proxmox_api_host }}
+        "pveam list {{ template_storage }} | grep -w {{ lxc_template }}"
+      register: template_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+    
+    - name: Fail if LXC template not found
+      # Template must exist or containers can't be created from it
+      ansible.builtin.fail:
+        msg: |
+          ❌ LXC template '{{ lxc_template }}' not found in storage '{{ template_storage }}'
+          
+          To download LXC templates:
+          1. Log into Proxmox web UI
+          2. Select node → local (or your template storage)
+          3. Click "CT Templates"
+          4. Click "Templates" button
+          5. Download desired template
+          
+          Or via command line:
+            ssh root@{{ proxmox_api_host }} "pveam update && pveam available"
+            ssh root@{{ proxmox_api_host }} "pveam download {{ template_storage }} debian-12-standard_12.2-1_amd64.tar.zst"
+          
+          Available templates in {{ template_storage }}:
+          Run: ssh root@{{ proxmox_api_host }} "pveam list {{ template_storage }}"
+      when: template_check.rc != 0
+    
+    # ========================================
+    # Validation: Network Configuration
+    # ========================================
+    # Verify the specified network bridge exists
+    
+    - name: Check if network bridge exists
+      # SSH to Proxmox and list network interfaces
+      # grep looks for our bridge name
+      ansible.builtin.command: >
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+        root@{{ proxmox_api_host }}
+        "ip link show | grep -w {{ network_bridge }}"
+      register: bridge_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+    
+    - name: Warn if network bridge not found
+      # Bridge not existing is a warning, not fatal - it might be virtual
+      # But we should let the user know
+      ansible.builtin.debug:
+        msg: |
+          ⚠️  WARNING: Network bridge '{{ network_bridge }}' not found on Proxmox host.
+          
+          This might be okay if:
+          - The bridge is created by Proxmox SDN
+          - You made a typo in the bridge name
+          
+          Common bridge names: vmbr0, vmbr1
+          
+          To see available bridges:
+          ssh root@{{ proxmox_api_host }} "brctl show"
+          
+          Continuing deployment, but network connectivity may fail...
+      when: bridge_check.rc != 0
+    
+    - name: Pause if bridge warning was displayed
+      # Give user time to read the warning and cancel if needed
+      ansible.builtin.pause:
+        seconds: 5
+      when: bridge_check.rc != 0
+    
+    # ========================================
+    # Validation: Domain Name Resolution
+    # ========================================
+    # Check if the provided domain names resolve in DNS
+    # This is especially important for Collabora integration
+    
+    - name: Check if NextCloud domain resolves
+      # Try to resolve the domain name using nslookup
+      # This only applies if a domain name was provided (not an IP)
+      ansible.builtin.command: nslookup {{ nextcloud_domain }}
+      register: nextcloud_dns_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+      when: nextcloud_domain is not match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    
+    - name: Warn if NextCloud domain is not resolvable
+      # DNS not resolving is common for local setups using /etc/hosts
+      # Warn but don't fail
+      ansible.builtin.debug:
+        msg: |
+          ⚠️  WARNING: Domain '{{ nextcloud_domain }}' does not resolve in DNS.
+          
+          This is okay if you're using:
+          - Local DNS server
+          - /etc/hosts file entries
+          - IP address instead of domain
+          
+          For production use, ensure this domain is:
+          - Properly configured in your DNS
+          - Points to {{ nextcloud_ip_config if nextcloud_ip_config != 'dhcp' else 'the container IP' }}
+          
+          If this is a typo, press Ctrl+C now and restart the playbook.
+      when:
+        - nextcloud_domain is not match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        - nextcloud_dns_check.rc != 0
+    
+    - name: Pause if NextCloud DNS warning was displayed
+      # Give user time to read and react
+      ansible.builtin.pause:
+        seconds: 10
+      when:
+        - nextcloud_domain is not match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        - nextcloud_dns_check.rc != 0
+    
+    - name: Check if Collabora domain resolves
+      # Same DNS check for Collabora domain
+      ansible.builtin.command: nslookup {{ collabora_domain }}
+      register: collabora_dns_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+      when: collabora_domain is not match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    
+    - name: Warn if Collabora domain is not resolvable
+      ansible.builtin.debug:
+        msg: |
+          ⚠️  WARNING: Domain '{{ collabora_domain }}' does not resolve in DNS.
+          
+          This is okay if you're using local DNS or hosts file entries.
+          If this is a typo, press Ctrl+C now and restart the playbook.
+      when:
+        - collabora_domain is not match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        - collabora_dns_check.rc != 0
+    
+    - name: Pause if Collabora DNS warning was displayed
+      ansible.builtin.pause:
+        seconds: 10
+      when:
+        - collabora_domain is not match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        - collabora_dns_check.rc != 0
+    
+    # ========================================
+    # Validation Complete
+    # ========================================
+    
+    - name: All validations passed
+      # Inform user that all prerequisites check out
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ✅ All Prerequisites Validated
+          ============================================
+          
+          - Proxmox API connection: OK
+          - SSH keys: Found
+          - Storage pool: Exists
+          - LXC template: Available
+          - Network bridge: {{ 'OK' if bridge_check.rc == 0 else 'Warning' }}
+          
+          Proceeding with container deployment...
+          This will take several minutes.
+  
+  # ============================================
+  # Tasks: Execute Container Creation Roles
+  # ============================================
+  # These roles run on localhost and create the LXC containers on Proxmox
+  # They set facts with container IPs that will be used in subsequent plays
+  
+  tasks:
+    # ========================================
+    # Role 1: Create NextCloud Container
+    # ========================================
+    # Creates the LXC container for NextCloud on Proxmox
+    # Includes: container creation, disk allocation, network setup
+    # Sets fact: nextcloud_container_ip
+    
+    - name: Create NextCloud LXC container
+      ansible.builtin.include_role:
+        name: create_nextcloud_container
+    
+    # ========================================
+    # Role 2: Create Collabora Container
+    # ========================================
+    # Creates the LXC container for Collabora Office on Proxmox
+    # Includes: container creation, disk allocation, network setup
+    # Sets fact: collabora_container_ip
+    
+    - name: Create Collabora LXC container
+      ansible.builtin.include_role:
+        name: create_collabora_container
+    
+    - name: Cache container IPs for next plays
+      # Make sure the container IPs are available to subsequent plays
+      ansible.builtin.set_fact:
+        nextcloud_container_ip: "{{ nextcloud_container_ip }}"
+        collabora_container_ip: "{{ collabora_container_ip }}"
+        cacheable: yes
+    
+    - name: Cache configuration variables for next plays
+      # Cache all variables needed by configuration plays
+      # These are defined in vars: section and need to be explicitly cached
+      ansible.builtin.set_fact:
+        php_version: "{{ php_version }}"
+        nextcloud_version: "{{ nextcloud_version }}"
+        nextcloud_data_dir: "{{ nextcloud_data_dir }}"
+        cacheable: yes
+
+# ============================================
+# Play 2: Configure NextCloud Container
+# ============================================
+# This play runs ON the NextCloud container to install and configure NextCloud
+# The container was created in Play 1 and added to the 'nextcloud' inventory group
+
+- name: Configure NextCloud Container
+  hosts: nextcloud
+  gather_facts: yes
+  
+  # Pass variables from localhost to this container
+  vars:
+    container_root_password: "{{ hostvars['localhost']['container_root_password'] }}"
+    nextcloud_db_name: "{{ hostvars['localhost']['nextcloud_db_name'] }}"
+    nextcloud_db_user: "{{ hostvars['localhost']['nextcloud_db_user'] }}"
+    nextcloud_db_password: "{{ hostvars['localhost']['nextcloud_db_password'] }}"
+    nextcloud_db_root_password: "{{ hostvars['localhost']['nextcloud_db_root_password'] }}"
+    nextcloud_admin_user: "{{ hostvars['localhost']['nextcloud_admin_user'] }}"
+    nextcloud_admin_password: "{{ hostvars['localhost']['nextcloud_admin_password'] }}"
+    nextcloud_domain: "{{ hostvars['localhost']['nextcloud_domain'] }}"
+    collabora_domain: "{{ hostvars['localhost']['collabora_domain'] }}"
+    php_version: "{{ hostvars['localhost']['php_version'] }}"
+    nextcloud_version: "{{ hostvars['localhost']['nextcloud_version'] }}"
+    nextcloud_data_dir: "{{ hostvars['localhost']['nextcloud_data_dir'] }}"
+  
+  roles:
+    # Execute the configure_nextcloud role directly on the container
+    - role: configure_nextcloud
+
+# ============================================
+# Play 3: Configure Collabora Container
+# ============================================
+# This play runs ON the Collabora container to install and configure Collabora Office
+
+- name: Configure Collabora Container
+  hosts: collabora
+  gather_facts: yes
+  
+  # Pass variables from localhost to this container
+  vars:
+    nextcloud_domain: "{{ hostvars['localhost']['nextcloud_domain'] }}"
+    collabora_domain: "{{ hostvars['localhost']['collabora_domain'] }}"
+  
+  roles:
+    # Execute the configure_collabora role directly on the container
+    - role: configure_collabora
+
+# ============================================
+# Play 4: Display Deployment Summary
+# ============================================
+# Return to localhost to display the final summary
+
+- name: Deployment Summary
+  hosts: localhost
+  gather_facts: no
+  
+  tasks:
+    - name: Retrieve deployment information from localhost
+      # Get all the variables we need for the summary
+      ansible.builtin.set_fact:
+        nextcloud_vmid: "{{ hostvars['localhost']['nextcloud_vmid'] }}"
+        nextcloud_container_ip: "{{ hostvars['localhost']['nextcloud_container_ip'] }}"
+        nextcloud_domain: "{{ hostvars['localhost']['nextcloud_domain'] }}"
+        nextcloud_admin_user: "{{ hostvars['localhost']['nextcloud_admin_user'] }}"
+        collabora_vmid: "{{ hostvars['localhost']['collabora_vmid'] }}"
+        collabora_container_ip: "{{ hostvars['localhost']['collabora_container_ip'] }}"
+        collabora_domain: "{{ hostvars['localhost']['collabora_domain'] }}"
+        ssh_private_key_path: "{{ hostvars['localhost']['ssh_private_key_path'] }}"
+    
+    - name: Display final deployment summary
+      # Show the user everything they need to access their new NextCloud
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ✅ Deployment Complete!
+          ============================================
+          
+          Your NextCloud instance is now ready!
+          
+          📦 NextCloud Container:
+          - VMID: {{ nextcloud_vmid }}
+          - IP: {{ nextcloud_container_ip }}
+          - URL: http://{{ nextcloud_domain }}
+          - Admin: {{ nextcloud_admin_user }}
+          
+          📦 Collabora Container:
+          - VMID: {{ collabora_vmid }}
+          - IP: {{ collabora_container_ip }}
+          - URL: http://{{ collabora_domain }}:9980
+          
+          🔧 Next Steps:
+          
+          1. Access NextCloud:
+             http://{{ nextcloud_domain }}
+             
+          2. Log in with your admin credentials
+             Username: {{ nextcloud_admin_user }}
+             Password: (the one you provided during setup)
+          
+          3. Configure Collabora in NextCloud:
+             - Go to Settings → Office (or install "Nextcloud Office" app)
+             - Enter Collabora URL: http://{{ collabora_container_ip }}:9980
+             - Save and test connection
+          
+          4. Test document editing:
+             - Create or upload a document
+             - Click to open it - it should open in Collabora
+          
+          5. For production use:
+             - Set up HTTPS/SSL certificates (Let's Encrypt recommended)
+             - Configure firewall rules to restrict access
+             - Set up regular backups of both containers
+             - Review security settings in NextCloud admin panel
+             - Consider setting up email notifications
+          
+          📚 Useful Commands:
+          
+          SSH to containers:
+            ssh -i {{ ssh_private_key_path }} root@{{ nextcloud_container_ip }}
+            ssh -i {{ ssh_private_key_path }} root@{{ collabora_container_ip }}
+          
+          View Collabora logs:
+            ssh root@{{ collabora_container_ip }} "docker logs collabora"
+          
+          Restart services:
+            ssh root@{{ nextcloud_container_ip }} "systemctl restart apache2"
+            ssh root@{{ collabora_container_ip }} "docker restart collabora"
+          
+          View NextCloud logs:
+            ssh root@{{ nextcloud_container_ip }} "tail -f /var/www/nextcloud/data/nextcloud.log"
+          
+          🗑️  Cleanup:
+          
+          If you used setup_proxmox_api.yaml, you may want to securely delete
+          the saved credentials file:
+            shred -u .proxmox_credentials.yaml
+          
+          🎉 Enjoy your self-hosted NextCloud!
+
+# ============================================
+# End of Playbook
+# ============================================

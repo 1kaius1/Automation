@@ -1,0 +1,21 @@
+---
+# ============================================
+# Configure NextCloud Role - Handlers
+# ============================================
+#
+# Handlers are tasks that run when notified by other tasks.
+# They only run once, even if notified multiple times.
+#
+# ============================================
+
+- name: restart apache
+  # Restart Apache to apply configuration changes
+  # This handler is triggered when Apache config files are modified
+  ansible.builtin.systemd:
+    name: apache2
+    state: restarted
+  become: yes
+
+# ============================================
+# End of Handlers
+# ============================================

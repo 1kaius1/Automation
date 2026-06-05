@@ -1,0 +1,6 @@
+# Don't commit sensitive stuff!
+.proxmox_credentials.yaml
+config.yaml
+ssh_keys/*
+token
+

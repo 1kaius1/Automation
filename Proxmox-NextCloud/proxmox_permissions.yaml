@@ -1,0 +1,79 @@
+---
+# ============================================
+# Proxmox API Role Permissions
+# ============================================
+#
+# This file defines the minimal set of permissions required for Ansible
+# to create and manage LXC containers on Proxmox.
+#
+# These permissions follow the principle of least privilege - only the
+# absolute minimum required permissions are granted.
+#
+# SECURITY NOTE:
+# These permissions allow the API user to:
+#   - Create and manage LXC containers
+#   - Allocate storage and network resources
+#   - Start/stop containers
+#
+# These permissions DO NOT allow:
+#   - Console access to containers
+#   - Migration of containers
+#   - System-level changes to Proxmox
+#   - Managing other users or permissions
+#   - Access to existing VMs/containers not created by this user
+#
+# You can edit this file before running the playbook if you need to
+# adjust permissions for your specific security requirements.
+#
+# ============================================
+
+# The name of the role that will be created in Proxmox
+# This role will be assigned to the API user
+proxmox_api_role_name: "Ansible_Automation"
+
+# List of permissions to grant to the role
+# Each permission is documented below
+proxmox_api_role_permissions:
+  # Container Management Permissions
+  - VM.Allocate              # Create new containers
+  - VM.Clone                 # Clone existing containers (if needed)
+  
+  # Container Configuration Permissions
+  # These allow modifying container settings
+  - VM.Config.CDROM          # Mount ISO images
+  - VM.Config.CPU            # Modify CPU allocation
+  - VM.Config.Cloudinit      # Configure cloud-init settings
+  - VM.Config.Disk           # Add/modify disks
+  - VM.Config.HWType         # Modify hardware type settings
+  - VM.Config.Memory         # Modify memory allocation
+  - VM.Config.Network        # Configure network interfaces
+  - VM.Config.Options        # Modify general container options
+  
+  # Container Monitoring and Control
+  - VM.Monitor               # View container status and metrics
+  - VM.Audit                 # Read container configuration
+  - VM.PowerMgmt             # Start, stop, shutdown, reboot containers
+  
+  # Storage Permissions
+  - Datastore.AllocateSpace  # Allocate storage for container disks
+  - Datastore.Audit          # View storage information
+  
+  # Network Permissions
+  - SDN.Use                  # Use Software Defined Networking resources
+  
+  # Resource Pool Permissions (optional but harmless if not using pools)
+  - Pool.Allocate            # Create and manage resource pools
+
+# ============================================
+# Permission Scope
+# ============================================
+#
+# When the role is created, it will be assigned at the root level (/)
+# which means it applies to all nodes in the Proxmox cluster.
+#
+# If you want to restrict the API user to specific nodes or storage,
+# you would need to modify the ACL assignment in the proxmox_setup role.
+#
+# ============================================
+
+

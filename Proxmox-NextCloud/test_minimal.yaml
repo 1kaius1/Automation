@@ -1,0 +1,32 @@
+---
+- name: Test Configuration Loading
+  hosts: localhost
+  gather_facts: no
+  
+  pre_tasks:
+    - name: Check if config.yaml exists
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/config.yaml"
+      register: config_file_check
+      delegate_to: localhost
+    
+    - name: Load configuration from config.yaml
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/config.yaml"
+      when: config_file_check.stat.exists
+      delegate_to: localhost
+    
+    - name: Display configuration source
+      ansible.builtin.debug:
+        msg: "{{ '✅ Using config.yaml' if config_file_check.stat.exists else '📝 Using prompts (no config.yaml)' }}"
+  
+  vars_prompt:
+    - name: test_var
+      prompt: "Enter test value [default: test123]"
+      default: "test123"
+      private: no
+  
+  tasks:
+    - name: Show the value
+      ansible.builtin.debug:
+        msg: "Value: {{ test_var }}"

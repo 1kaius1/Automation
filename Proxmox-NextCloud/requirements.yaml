@@ -1,0 +1,17 @@
+---
+# Ansible Galaxy Requirements
+# ============================
+# Collections needed for the NextCloud/Collabora deployment
+
+collections:
+  # General utilities and modules
+  - name: community.general
+    version: ">=8.0.0"
+  
+  # MySQL/MariaDB management modules
+  - name: community.mysql
+    version: ">=3.0.0"
+  
+  # Proxmox management modules (replaces deprecated community.general.proxmox)
+  - name: community.proxmox
+    version: ">=1.0.0"
