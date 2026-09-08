@@ -1,0 +1,451 @@
+---
+# ============================================
+# create-pve_svc_user.yaml
+# ============================================
+#
+# Provisions the COMPLETE shared "svc_ansible" automation identity for
+# the Proxmox cluster in one run:
+#
+#   API side (once per cluster — pmxcfs replicates users/roles/ACLs/
+#   tokens to every node, so the result is cluster-wide):
+#     - a least-privilege PVE role (privs from proxmox_permissions.yaml)
+#     - the svc_ansible@pve user, role assigned at the cluster root ACL
+#     - an API token, written to
+#       group_vars/proxmox_cluster/vars.yaml + vault.yaml (the latter
+#       Ansible Vault-encrypted). This is the credential every
+#       Proxmox-facing project in this mono-repo pulls in.
+#
+#   SSH side (on EVERY host in the [proxmox_nodes] inventory group):
+#     - a Linux svc_ansible login account (key-only; password locked)
+#     - NOPASSWD sudo scoped to /usr/sbin/qm and /usr/sbin/pvesm only
+#       (/etc/sudoers.d/svc_ansible, visudo-validated)
+#     - the on-node cloud-image cache directory, owned by that account
+#     - `snippets` content enabled on pve_svc_snippet_storage and its
+#       snippets/ dir owned by that account (for per-build cloud-init
+#       network snippets)
+#   Only create-template-linux.yaml uses the SSH side; the API token is
+#   what Proxmox-Forgejo and Proxmox-NextCloud use.
+#
+# Connects to the node(s) as a privileged admin user (root, or an account
+# that can sudo to root) whose SSH + sudo credentials are collected via
+# vars_prompt — never on the command line or from a file. The authorized
+# public key (not a secret) is the shared sysadmin_ssh_public_key from
+# template_configuration.yaml.
+#
+# Re-runnable: the SSH side and the PVE role/user/ACL are idempotent. The
+# API TOKEN is created only when group_vars/proxmox_cluster/vault.yaml
+# does not yet exist; if it does, the existing token is kept and the run
+# continues (role/user/ACL still reconciled, SSH side still applied).
+# Pass -e rotate_api_token=true to deliberately DELETE and recreate the
+# token — this breaks every project holding the old secret until they
+# re-pull the file.
+#
+# Usage:
+#   cd Shared/Ansible
+#   cp template_configuration.yaml.example template_configuration.yaml   # set sysadmin_ssh_public_key
+#   ansible-playbook create-pve_svc_user.yaml
+#   ansible-playbook create-pve_svc_user.yaml -e rotate_api_token=true   # rotate the shared token
+#
+# Requires a vault password file already in place — this directory's
+# ansible.cfg vault_identity_list; see
+# Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md section 2.
+# ============================================
+
+# ============================================
+# Play 1 (localhost) — decide about the API token, load role privs.
+# Nothing is changed here.
+# ============================================
+- name: Inspect the existing shared credential
+  hosts: localhost
+  gather_facts: false
+  vars:
+    vault_file_path: "group_vars/proxmox_cluster/vault.yaml"
+    vars_file_path: "group_vars/proxmox_cluster/vars.yaml"
+
+  tasks:
+    - name: Check whether a vault-encrypted credential already exists
+      ansible.builtin.stat:
+        path: "{{ vault_file_path }}"
+      register: existing_vault_file
+
+    - name: Peek at the first bytes if it exists, to confirm it's encrypted
+      ansible.builtin.command: head -c 15 "{{ vault_file_path }}"
+      register: existing_vault_head
+      changed_when: false
+      when: existing_vault_file.stat.exists
+
+    - name: Decide whether the API token needs (re)creating
+      ansible.builtin.set_fact:
+        api_credential_exists: >-
+          {{ existing_vault_file.stat.exists
+             and (existing_vault_head.stdout | default('')) is search('ANSIBLE_VAULT') }}
+
+    - name: Resolve the token action
+      ansible.builtin.set_fact:
+        api_token_needed: "{{ (not api_credential_exists) or (rotate_api_token | default(false) | bool) }}"
+
+    - name: Note that an existing token is being kept
+      ansible.builtin.debug:
+        msg: >-
+          {{ vault_file_path }} already exists — keeping the current API token.
+          Pass -e rotate_api_token=true to delete and recreate it.
+      when: api_credential_exists and not (rotate_api_token | default(false) | bool)
+
+    - name: Load the shared role's permission list
+      ansible.builtin.include_vars:
+        file: proxmox_permissions.yaml
+
+    - name: Cache decisions and config for the later plays
+      ansible.builtin.set_fact:
+        vault_file_path: "{{ vault_file_path }}"
+        vars_file_path: "{{ vars_file_path }}"
+        api_token_needed: "{{ api_token_needed }}"
+        proxmox_api_role_name: "{{ proxmox_api_role_name }}"
+        proxmox_api_role_permissions: "{{ proxmox_api_role_permissions }}"
+        cacheable: true
+
+# ============================================
+# Play 2 (proxmox_nodes) — SSH-side account on every node + the PVE
+# API role/user/ACL/token once.
+# ============================================
+- name: Provision the svc_ansible identity on the Proxmox node(s)
+  hosts: proxmox_nodes
+  gather_facts: false
+  vars_files:
+    # For sysadmin_ssh_public_key — the shared operator key. This file is
+    # gitignored; copy it from template_configuration.yaml.example first.
+    - template_configuration.yaml
+
+  vars_prompt:
+    - name: pve_admin_user
+      prompt: "Privileged SSH user for the Proxmox node(s) (root, or able to sudo to root)"
+      private: false
+      default: root
+
+    - name: pve_admin_ssh_password
+      prompt: "SSH password for that user (leave blank to use key-based auth)"
+      private: true
+      default: ""
+
+    - name: pve_admin_become_password
+      prompt: "sudo password for that user (leave blank if root, or NOPASSWD sudo)"
+      private: true
+      default: ""
+
+  vars:
+    # SSH-side account and the resources it owns. Keep pve_svc_cache_dir
+    # identical to template_image_cache_dir in template_configuration.yaml.
+    pve_svc_user: "svc_ansible"
+    pve_svc_home: "/home/{{ pve_svc_user }}"
+    pve_svc_shell: "/bin/bash"
+    pve_svc_cache_dir: "/var/cache/vm-template-images"
+    # Dir-type storage that create-template-linux.yaml writes per-build
+    # cloud-init network snippets to. Keep identical to
+    # template_snippet_storage in template_configuration.yaml.
+    pve_svc_snippet_storage: "local"
+    pve_svc_sudo_commands: "/usr/sbin/qm, /usr/sbin/pvesm"
+    # Same string template_configuration.yaml puts in the template's
+    # sysadmin authorized_keys. Override with -e if ever needed.
+    pve_svc_authorized_key: "{{ sysadmin_ssh_public_key }}"
+
+    # API-side identity. The user name matches the SSH account on purpose.
+    proxmox_api_username: "{{ pve_svc_user }}"
+    proxmox_api_realm: "pve"
+    proxmox_api_token_name: "automation"
+    proxmox_api_role_name: "{{ hostvars['localhost']['proxmox_api_role_name'] }}"
+    proxmox_api_role_permissions: "{{ hostvars['localhost']['proxmox_api_role_permissions'] }}"
+    api_token_needed: "{{ hostvars['localhost']['api_token_needed'] | bool }}"
+
+    # Connection, driven entirely by the prompts above. An empty
+    # pve_admin_ssh_password is falsy, so Ansible falls back to key auth;
+    # an empty become password works when connecting as root or with
+    # NOPASSWD sudo.
+    ansible_user: "{{ pve_admin_user }}"
+    ansible_ssh_pass: "{{ pve_admin_ssh_password }}"
+    ansible_become: true
+    ansible_become_user: "root"
+    ansible_become_password: "{{ pve_admin_become_password }}"
+
+  tasks:
+    # ---------- SSH-side account (every node) ----------
+    - name: Validate the authorized public key
+      ansible.builtin.assert:
+        that:
+          - pve_svc_authorized_key | default('', true) | trim is search('^(ssh-ed25519|ssh-rsa|ecdsa-sha2-|sk-)')
+        fail_msg: >-
+          sysadmin_ssh_public_key in template_configuration.yaml is missing or
+          does not look like an SSH public key (got: '{{ pve_svc_authorized_key | default("") | trim }}').
+        success_msg: "Authorized key: {{ pve_svc_authorized_key | trim }}"
+      run_once: true
+      become: false
+
+    - name: Create the service group
+      ansible.builtin.group:
+        name: "{{ pve_svc_user }}"
+        state: present
+
+    - name: Create the service account (login shell, home, no usable password)
+      ansible.builtin.user:
+        name: "{{ pve_svc_user }}"
+        group: "{{ pve_svc_user }}"
+        home: "{{ pve_svc_home }}"
+        create_home: true
+        shell: "{{ pve_svc_shell }}"
+        password_lock: true
+        comment: "Ansible automation (Proxmox template builds) — Shared/Ansible"
+
+    - name: Ensure the service account's .ssh directory exists
+      ansible.builtin.file:
+        path: "{{ pve_svc_home }}/.ssh"
+        state: directory
+        owner: "{{ pve_svc_user }}"
+        group: "{{ pve_svc_user }}"
+        mode: "0700"
+
+    - name: Install exactly the one authorized key (whole-file, so it stays exclusive)
+      ansible.builtin.copy:
+        dest: "{{ pve_svc_home }}/.ssh/authorized_keys"
+        content: "{{ pve_svc_authorized_key | trim }}\n"
+        owner: "{{ pve_svc_user }}"
+        group: "{{ pve_svc_user }}"
+        mode: "0600"
+
+    - name: Grant NOPASSWD sudo scoped to qm and pvesm only
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ pve_svc_user }}"
+        content: "{{ pve_svc_user }} ALL=(root) NOPASSWD: {{ pve_svc_sudo_commands }}\n"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "visudo -cf %s"
+
+    - name: Create the on-node cloud-image cache directory
+      ansible.builtin.file:
+        path: "{{ pve_svc_cache_dir }}"
+        state: directory
+        owner: "{{ pve_svc_user }}"
+        group: "{{ pve_svc_user }}"
+        mode: "0755"
+
+    # create-template-linux.yaml writes each build's netplan-v2 network
+    # config to this storage's snippets/ dir and points `qm set --cicustom
+    # network=` at it (Proxmox only emits legacy network-config v1 via
+    # ipconfig0, which newer cloud-init ignores). `snippets` content must
+    # be enabled on the storage and the dir writable by svc_ansible.
+    - name: Read the snippet storage's config
+      ansible.builtin.command: pvesh get /storage/{{ pve_svc_snippet_storage }} --output-format json
+      register: snippet_storage_json
+      changed_when: false
+
+    - name: Parse the snippet storage's path and content types
+      ansible.builtin.set_fact:
+        snippet_storage_path: "{{ (snippet_storage_json.stdout | from_json).path | default('') }}"
+        snippet_storage_content: "{{ (snippet_storage_json.stdout | from_json).content | default('') }}"
+
+    - name: Fail if the snippet storage is not a dir-type storage
+      ansible.builtin.fail:
+        msg: >-
+          Storage '{{ pve_svc_snippet_storage }}' has no path — it must be a
+          dir-type storage for snippets. Set pve_svc_snippet_storage (and
+          template_snippet_storage) to a dir storage.
+      when: snippet_storage_path | length == 0
+
+    - name: Enable 'snippets' content on the storage
+      ansible.builtin.command: >
+        pvesm set {{ pve_svc_snippet_storage }}
+        --content {{ (snippet_storage_content.split(',') | reject('equalto', '') | list + ['snippets']) | unique | join(',') }}
+      when: "'snippets' not in snippet_storage_content.split(',')"
+      changed_when: true
+
+    - name: Own the storage's snippets/ dir for svc_ansible
+      ansible.builtin.file:
+        path: "{{ snippet_storage_path }}/snippets"
+        state: directory
+        owner: "{{ pve_svc_user }}"
+        group: "{{ pve_svc_user }}"
+        mode: "0755"
+
+    - name: Confirm the account's effective sudo rights
+      ansible.builtin.command: "sudo -n -l -U {{ pve_svc_user }}"
+      changed_when: false
+
+    # ---------- PVE API role / user / ACL / token (once) ----------
+    - name: Confirm pveum is available (this really is a Proxmox host)
+      ansible.builtin.command: which pveum
+      register: pveum_check
+      changed_when: false
+      failed_when: false
+      run_once: true
+
+    - name: Fail if this isn't a Proxmox host
+      ansible.builtin.fail:
+        msg: "'pveum' not found on {{ inventory_hostname }} — not a Proxmox VE host."
+      when: pveum_check.rc != 0
+      run_once: true
+
+    - name: List existing roles
+      ansible.builtin.command: pveum role list
+      register: role_list
+      changed_when: false
+      run_once: true
+
+    - name: Create the shared automation role
+      ansible.builtin.command: >
+        pveum role add {{ proxmox_api_role_name }}
+        --privs {{ proxmox_api_role_permissions | join(',') }}
+      when: proxmox_api_role_name not in role_list.stdout
+      register: role_create
+      changed_when: role_create.rc == 0
+      run_once: true
+
+    - name: Keep the role's permissions in sync if it already exists
+      ansible.builtin.command: >
+        pveum role modify {{ proxmox_api_role_name }}
+        --privs {{ proxmox_api_role_permissions | join(',') }}
+      when: proxmox_api_role_name in role_list.stdout
+      register: role_update
+      changed_when: role_update.rc == 0
+      run_once: true
+
+    - name: List existing users
+      ansible.builtin.command: pveum user list
+      register: user_list
+      changed_when: false
+      run_once: true
+
+    - name: Create the shared automation user
+      ansible.builtin.command: >
+        pveum user add {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+        --comment "Shared Ansible automation account for the Automation mono-repo"
+      when: (proxmox_api_username + '@' + proxmox_api_realm) not in user_list.stdout
+      register: user_create
+      changed_when: user_create.rc == 0
+      run_once: true
+
+    - name: Assign the role at the cluster root ACL path
+      ansible.builtin.command: >
+        pveum acl modify /
+        --user {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+        --role {{ proxmox_api_role_name }}
+      register: acl_modify
+      changed_when: acl_modify.rc == 0
+      run_once: true
+
+    - name: List existing tokens for this user
+      ansible.builtin.command: pveum user token list {{ proxmox_api_username }}@{{ proxmox_api_realm }}
+      register: token_list
+      changed_when: false
+      failed_when: false
+      run_once: true
+      when: api_token_needed
+
+    - name: Remove an existing token of the same name (rotation was requested)
+      ansible.builtin.command: >
+        pveum user token remove {{ proxmox_api_username }}@{{ proxmox_api_realm }} {{ proxmox_api_token_name }}
+      when:
+        - api_token_needed
+        - token_list.rc == 0
+        - proxmox_api_token_name in token_list.stdout
+      register: token_delete
+      changed_when: token_delete.rc == 0
+      run_once: true
+
+    - name: Create the API token (privsep disabled — token inherits the user's role)
+      ansible.builtin.command: >
+        pveum user token add {{ proxmox_api_username }}@{{ proxmox_api_realm }} {{ proxmox_api_token_name }}
+        --privsep 0
+        --output-format json
+      register: token_create
+      changed_when: token_create.rc == 0
+      no_log: true
+      run_once: true
+      when: api_token_needed
+
+    - name: Extract the token id and secret
+      ansible.builtin.set_fact:
+        generated_api_token_id: "{{ proxmox_api_username }}@{{ proxmox_api_realm }}!{{ proxmox_api_token_name }}"
+        generated_api_token_secret: "{{ (token_create.stdout | from_json).value }}"
+        cacheable: true
+      no_log: true
+      run_once: true
+      when: api_token_needed
+
+# ============================================
+# Play 3 (localhost) — write the shared credential files (only when a
+# token was (re)created).
+# ============================================
+- name: Write the shared Proxmox credential
+  hosts: localhost
+  gather_facts: false
+  vars:
+    node0: "{{ groups['proxmox_nodes'][0] }}"
+    vault_file_path: "{{ hostvars['localhost']['vault_file_path'] }}"
+    vars_file_path: "{{ hostvars['localhost']['vars_file_path'] }}"
+    api_token_needed: "{{ hostvars['localhost']['api_token_needed'] | bool }}"
+
+  tasks:
+    - name: Skip credential write — existing token kept
+      ansible.builtin.debug:
+        msg: "Existing {{ vault_file_path }} left untouched."
+      when: not api_token_needed
+
+    - name: Write / update the shared credential
+      when: api_token_needed
+      vars:
+        generated_api_token_id: "{{ hostvars[node0]['generated_api_token_id'] }}"
+        generated_api_token_secret: "{{ hostvars[node0]['generated_api_token_secret'] }}"
+        proxmox_connect_host: "{{ hostvars[node0]['ansible_host'] | default(node0) }}"
+      block:
+        - name: Write the non-secret connection details
+          ansible.builtin.copy:
+            content: |
+              ---
+              # Shared, cluster-wide Proxmox connection details.
+              # Generated by create-pve_svc_user.yaml — do not hand-edit the
+              # token_id here without also rotating the token on the cluster
+              # (ansible-playbook create-pve_svc_user.yaml -e rotate_api_token=true).
+              proxmox_api_host: "{{ proxmox_connect_host }}"
+              proxmox_api_token_id: "{{ generated_api_token_id }}"
+              # Bridges the vaulted secret in the sibling vault.yaml to the plain
+              # name every project's module_defaults references — the same
+              # vars.yaml/vault.yaml double-variable pattern used throughout
+              # this mono-repo.
+              {% raw %}proxmox_api_token_secret: "{{ vault_proxmox_api_token_secret }}"{% endraw %}
+            dest: "{{ vars_file_path }}"
+            mode: "0644"
+
+        - name: Write the token secret to a plaintext staging file
+          ansible.builtin.copy:
+            content: |
+              ---
+              vault_proxmox_api_token_secret: "{{ generated_api_token_secret }}"
+            dest: "{{ vault_file_path }}"
+            mode: "0600"
+          no_log: true
+
+        - name: Encrypt the staging file in place with Ansible Vault
+          ansible.builtin.command: "ansible-vault encrypt {{ vault_file_path }}"
+          changed_when: true
+
+        - name: Confirm the credential is now encrypted
+          ansible.builtin.command: head -c 15 "{{ vault_file_path }}"
+          register: encrypted_check
+          changed_when: false
+
+        - name: Fail loudly if encryption did not happen
+          ansible.builtin.fail:
+            msg: >
+              {{ vault_file_path }} does not look encrypted after
+              `ansible-vault encrypt`. Do NOT commit it — check that
+              vault_identity_list is set in this directory's ansible.cfg
+              and re-run.
+          when: not (encrypted_check.stdout is search('ANSIBLE_VAULT'))
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          svc_ansible ready — SSH account + scoped sudo + image cache +
+          snippet dir on {{ groups['proxmox_nodes'] | join(', ') }};
+          API token {{ 'written to ' ~ vars_file_path if api_token_needed else 'left as-is' }}.
+          Projects pull it in via
+          vars_files: ../Shared/Ansible/group_vars/proxmox_cluster/{vars,vault}.yaml

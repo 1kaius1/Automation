@@ -1,0 +1,22 @@
+# Ansible Configuration File
+# ==========================
+# Used only when running create-pve_svc_user.yaml directly
+# from this directory.
+
+[defaults]
+inventory = ./inventory/hosts.ini
+deprecation_warnings = False
+retry_files_enabled = False
+force_color = True
+host_key_checking = False
+
+# Vault password file for encrypting/decrypting group_vars/proxmox_cluster/vault.yaml.
+# See Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md if this is your first time
+# setting this up — you create this file once, it never gets committed.
+#
+# This whole file is gitignored (copy this .example to ansible.cfg to get
+# started) so you can rename the "homelab" label/filename to something
+# personal without risking a commit — must match whatever label/filename
+# Proxmox-Forgejo/ansible.cfg uses, since both decrypt the one shared
+# credential in this directory.
+vault_identity_list = homelab@~/.ansible/vault_pass_homelab.txt

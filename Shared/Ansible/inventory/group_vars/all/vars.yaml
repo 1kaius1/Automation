@@ -1,0 +1,10 @@
+---
+# Pin the interpreter explicitly rather than relying on Ansible's
+# auto-discovery — on systems with pyenv (or similar) installed alongside
+# the system Python, discovery can pick a broken/unselected pyenv shim
+# for localhost and fail at the very first "Gathering Facts" task with a
+# "Module result deserialization failed" error. /usr/bin/python3 is the
+# stable system interpreter this project's Debian-based tooling assumes
+# throughout (see Proxmox-Forgejo/inventory/group_vars/all/vars.yaml,
+# which does the same for the same reason).
+ansible_python_interpreter: /usr/bin/python3

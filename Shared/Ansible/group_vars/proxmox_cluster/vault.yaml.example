@@ -1,0 +1,10 @@
+# This file documents the single variable the real, encrypted vault.yaml
+# in this directory must define. It is NOT itself used by any playbook —
+# it exists so you can see the shape of the real file without decrypting it.
+#
+# The real vault.yaml is generated for you by running
+# create-pve_svc_user.yaml — you should not hand-write it.
+# See Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md if you're new to
+# Ansible Vault and want to understand what's about to happen.
+
+vault_proxmox_api_token_secret: "00000000-0000-0000-0000-000000000000"

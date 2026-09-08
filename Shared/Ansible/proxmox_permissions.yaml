@@ -1,0 +1,62 @@
+---
+# ============================================
+# Shared Proxmox Automation Role Permissions
+# ============================================
+#
+# Least-privilege permission set for the single, cluster-wide
+# svc_ansible@pve account used by every Proxmox-facing project
+# in this mono-repo. Edit this file, then re-run
+# create-pve_svc_user.yaml, to change what the shared
+# account is allowed to do.
+#
+# These permissions allow the account to:
+#   - Create, configure, and manage VMs and LXC containers
+#   - Allocate storage and network resources
+#   - Start/stop/clone guests, including cloud-init template cloning
+#   - Trigger and schedule vzdump backups
+#
+# These permissions do NOT allow:
+#   - Console access to guests
+#   - Managing other users, roles, or ACLs
+#   - Host-level system changes outside guest management
+#   - Access to Proxmox Backup Server datastore configuration itself
+#     (only triggering backups to a storage target that already exists)
+#
+# ============================================
+
+proxmox_api_role_name: "Ansible_Automation"
+
+proxmox_api_role_permissions:
+  # VM/container lifecycle
+  - VM.Allocate
+  - VM.Clone
+  - VM.PowerMgmt
+  - VM.Audit
+  - VM.Monitor
+
+  # VM/container configuration (covers cloud-init-driven provisioning)
+  - VM.Config.CDROM
+  - VM.Config.CPU
+  - VM.Config.Cloudinit
+  - VM.Config.Disk
+  - VM.Config.HWType
+  - VM.Config.Memory
+  - VM.Config.Network
+  - VM.Config.Options
+
+  # Storage
+  - Datastore.AllocateSpace
+  - Datastore.Audit
+
+  # Networking (SDN-managed bridges/VLANs, if used)
+  - SDN.Use
+
+  # Resource pools (harmless if unused)
+  - Pool.Allocate
+
+  # Backup (vzdump jobs/runs to an existing storage target)
+  - VM.Backup
+
+# Assigned at the root ACL path (/), i.e. cluster-wide — this is
+# deliberate: the account is meant to work identically no matter which
+# node a guest is provisioned on. See Shared/Ansible/README.md.

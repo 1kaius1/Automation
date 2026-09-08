@@ -1,0 +1,80 @@
+---
+# ============================================
+# template_manifest.yaml
+# ============================================
+#
+# Canonical name -> VMID -> OS/version allocation for every base template
+# create-template-linux.yaml knows how to build. This file is the single
+# source of truth for that mapping; it is committed (no secrets, no
+# site-specific identifiers) so consuming projects can rely on it.
+#
+# One row per template. Fields:
+#
+#   name     "T-<Os>-<Version>-<Source>[-<Variant>]", e.g.
+#            "T-Debian-13-Cloud", "T-Rocky-10-ISO",
+#            "T-Arch-20260901.583572-Cloud", "T-Ubuntu-24.04-ISO-STIG".
+#            <Source> is REQUIRED and is exactly "Cloud" or "ISO"
+#            (capitalised — these are friendly names). <Variant> is
+#            optional and names a customisation layer applied on top of
+#            the base (e.g. STIG, K8s). This is the human-facing identity
+#            and the value a build run selects with `template_target` in
+#            template_configuration.yaml.
+#
+#   source   REQUIRED. "Cloud" (import the vendor cloud image — built by
+#            create-template-linux.yaml) or "ISO" (automated install from
+#            the vendor ISO onto a minimal base — built by a separate
+#            Packer project, planned). create-template-linux.yaml only
+#            builds "Cloud" rows and fails fast on an "ISO" row.
+#
+#   variant  Optional. A customisation-layer key (matches the last name
+#            segment). Reserved for the future customisation step; not
+#            acted on yet.
+#
+#   vmid     From 90000 up. Until this repo cuts its 1.0.0 release the
+#            table may be renumbered freely (e.g. when a row is removed,
+#            shuffle the rest down to stay contiguous). FROM 1.0.0 ON:
+#            a vmid is permanent — never renumber or reuse, and a removed
+#            row's number stays retired (leave the gap).
+#
+#            Templates live in the 90000+ band on purpose: Proxmox's
+#            "next free ID" picker walks upward from 100, so real VMs and
+#            containers grow from 100 up and never collide with this band.
+#
+#   os       One of: debian, ubuntu, rocky, arch, rhel. Must be a key in
+#            the os_catalog in create-template-linux.yaml.
+#
+#   version  The build input. Meaning per os:
+#              debian  "12" (bookworm) | "13" (trixie)
+#              ubuntu  "24.04" (noble) | "26.04" (resolute)
+#              rocky   "9" | "10"
+#              rhel    "9" | "10"
+#              arch    a dated cloud-image version "YYYYMMDD.serial" from
+#                      https://geo.mirror.pkgbuild.com/images/ (e.g.
+#                      "20260901.583572"). It's part of the template name
+#                      (T-Arch-<version>). To move to a newer Arch, bump
+#                      both `name` and `version` on the row and rebuild.
+#
+#   stub     Optional, default false. `stub: true` reserves the name +
+#            vmid but marks the build path as not-yet-working —
+#            create-template-linux.yaml fails fast on it and
+#            create-templates_from_manifest.sh skips it. Put the reason in a comment
+#            on the row.
+#
+# Consuming projects (e.g. Proxmox-Forgejo) copy a name + vmid pair from
+# this table into their own vm_template_name / vm_template_vmid.
+
+templates:
+  - { name: "T-Debian-12-Cloud",    os: debian, version: "12",    source: Cloud, vmid: 90000 }
+  - { name: "T-Debian-13-Cloud",    os: debian, version: "13",    source: Cloud, vmid: 90001 }
+  - { name: "T-Ubuntu-24.04-Cloud", os: ubuntu, version: "24.04", source: Cloud, vmid: 90002 }
+  - { name: "T-Ubuntu-26.04-Cloud", os: ubuntu, version: "26.04", source: Cloud, vmid: 90003 }
+  - { name: "T-Rocky-9-Cloud",      os: rocky,  version: "9",     source: Cloud, vmid: 90004 }
+  # Rocky/RHEL 10 mandate an x86-64-v3 CPU (AVX2/BMI2/FMA — Haswell/Zen or
+  # newer). The build node must have that silicon; a pre-Haswell host
+  # (e.g. Ivy Bridge) cannot build or run this template.
+  - { name: "T-Rocky-10-Cloud",     os: rocky,  version: "10",    source: Cloud, vmid: 90005 }
+  - { name: "T-Arch-20260901.583572-Cloud", os: arch, version: "20260901.583572", source: Cloud, vmid: 90006 }
+  # RHEL's KVM guest image needs an authenticated Red Hat Customer Portal
+  # download (no anon URL) + subscription-manager, or a pre-staged image.
+  - { name: "T-RHEL-9-Cloud",       os: rhel,   version: "9",     source: Cloud, vmid: 90007, stub: true }
+  - { name: "T-RHEL-10-Cloud",      os: rhel,   version: "10",    source: Cloud, vmid: 90008, stub: true }

@@ -1,0 +1,11 @@
+---
+# This file documents the shape of the real vars.yaml in this directory.
+# It is NOT itself used by any playbook.
+#
+# The real vars.yaml is generated for you by
+# create-pve_svc_user.yaml — you should not hand-write it.
+# This repo is public, so the real file (which contains your actual
+# cluster's hostname/IP) is gitignored; only this .example is committed.
+
+proxmox_api_host: "your-proxmox-cluster.example.home"
+proxmox_api_token_id: "svc_ansible@pve!automation"

@@ -1,0 +1,37 @@
+# Copy this file to hosts.ini and set your own node name(s) + address(es).
+# hosts.ini is gitignored (this repo is public — real node names and IPs
+# identify your cluster); only this .example is committed.
+#
+# [proxmox_nodes] lists every Proxmox VE node in the cluster. Two
+# playbooks in this directory use it:
+#
+#   create-pve_svc_user.yaml — provisions the shared `svc_ansible`
+#   identity. Runs against this whole group (connecting as a prompted-for
+#   privileged admin, NOT as svc_ansible): a Linux svc_ansible account +
+#   scoped sudo + image cache dir on every node, and — once, since pmxcfs
+#   replicates it cluster-wide — the svc_ansible@pve API role/user/token.
+#
+#   create-template-linux.yaml — its build steps run `qm` over SSH via
+#   `delegate_to: <node name>`, so the delegated name must match both the
+#   Proxmox API node name and a resolvable SSH target. Mapping each node's
+#   API name to its address here keeps the delegation off DNS.
+#
+# So the inventory hostname for each node MUST be that node's Proxmox API
+# name (what `pvecm nodes` / the web UI shows), and ansible_host is how
+# this control node reaches it over SSH.
+#
+# ansible_user is the minimal-privilege svc_ansible account that
+# create-pve_svc_user.yaml creates: key-only SSH, passwordless sudo
+# scoped to `/usr/sbin/qm` and `/usr/sbin/pvesm` only, owner of the image
+# cache dir. create-template-linux.yaml calls `sudo -n qm ...` explicitly
+# rather than escalating via `become` (which would need sudo on the
+# Python interpreter). Run create-pve_svc_user.yaml before any other
+# playbook here.
+
+[local]
+localhost ansible_connection=local
+
+[proxmox_nodes]
+pve1 ansible_host=REPLACE_ME_NODE_IP ansible_user=svc_ansible
+# pve2 ansible_host=REPLACE_ME_NODE_IP ansible_user=svc_ansible
+# pve3 ansible_host=REPLACE_ME_NODE_IP ansible_user=svc_ansible

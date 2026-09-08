@@ -1,0 +1,12 @@
+# Documents the variable the real, encrypted template_configuration_vault.yaml
+# must define. NOT itself used by any playbook — see
+# Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md if you're new to Ansible Vault.
+#
+# Create the real file with:
+#   ansible-vault create template_configuration_vault.yaml
+#
+# This is a real password (even though its whole purpose is to be
+# immediately superseded by later config management) — it still goes
+# through Vault like every other secret in this mono-repo, no exceptions.
+
+vault_sysadmin_initial_password: "change-me"
