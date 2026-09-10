@@ -24,23 +24,35 @@ One name, two mechanisms, both provisioned by **`create-pve_svc_user.yaml`**:
 - `create-pve_svc_user.yaml` — one-time, idempotent. Provisions the whole `svc_ansible` identity above (API token + per-node SSH account). Connects to the node(s) as a privileged admin whose SSH and sudo credentials it **prompts** for — nothing sensitive on the command line or in a file. The SSH account's `authorized_keys` is set to the same `sysadmin_ssh_public_key` string from `template_configuration.yaml`. Re-run to reconcile the role/user/ACL and the SSH side; the API token is left alone unless you pass `-e rotate_api_token=true`.
 - `proxmox_permissions.yaml` — the least-privilege privilege list for the shared role (covers both VM and LXC provisioning). Edit it, then re-run `create-pve_svc_user.yaml`, to change what the account may do cluster-wide.
 - `group_vars/proxmox_cluster/vars.yaml` — non-secret connection details (`proxmox_api_host`, `proxmox_api_token_id`). This repo is public and `proxmox_api_host` identifies your real cluster, so this file is gitignored — `create-pve_svc_user.yaml` generates it locally. `vars.yaml.example` (committed) documents its shape.
-- `group_vars/proxmox_cluster/vault.yaml.example` — documents the one variable the real, encrypted `vault.yaml` defines (`vault_proxmox_api_token_secret`). The real `vault.yaml` is generated (and Vault-encrypted) by `create-pve_svc_user.yaml`, not written by hand — see `Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md` for how Ansible Vault works if you've never used it.
+- `group_vars/proxmox_cluster/vault.yaml.example` — documents the one variable the real, encrypted `vault.yaml` defines (`vault_proxmox_api_token_secret`). The real `vault.yaml` is generated (and Vault-encrypted) by `create-pve_svc_user.yaml`, not written by hand — see `docs/ANSIBLE_VAULT_GUIDE.md` for how Ansible Vault works if you've never used it.
 - `create-template-linux.yaml` — builds a hardened, cloud-init-ready Proxmox VM template (Debian 12/13, Ubuntu 24.04/26.04, Rocky 9/10, Arch; RHEL 9/10 are stubbed), usable by any project in this mono-repo — not specific to Forgejo. Builds one template per run; **only creates — never deletes or modifies a VM** (see "Building a VM template" below).
 - `template_manifest.yaml` — committed source of truth for the `name → VMID → OS/version` mapping of every template the playbook can build. Templates are allocated VMIDs from 90000 up; adding one is a one-line append. Consuming projects copy a `name`/`vmid` pair from here.
 - `create-templates_from_manifest.sh` — walks `template_manifest.yaml` and runs `create-template-linux.yaml` once per row, building the templates that are missing and skipping the ones that already exist. The "make all the base templates" entry point.
 - `template_configuration.yaml` / `template_configuration_vault.yaml` — `create-template-linux.yaml`'s per-run config: which template to build (`template_target`, a name from the manifest), which node/storage/bridge to build it on, the `sysadmin` SSH key (also used for the `svc_ansible` SSH account). Real files are yours to create from the `.example` companions.
+- `ansible.cfg.example` — the **single canonical** Ansible config example for the whole repo: a `COMMON` section every project uses verbatim (the example ships one `vault_identity_list` identity — one password for every `vault.yaml`; for per-vault or per-site isolation, list several `label@path` identities instead, identical across projects — see `docs/ANSIBLE_VAULT_GUIDE.md` §12), then one section per project for settings only that project needs. Every project (`Shared/Ansible`, `Proxmox-Forgejo`, `Proxmox-NextCloud`, …) copies it to its own gitignored `ansible.cfg`, keeping `COMMON` + its own section. Adding a project to the repo means adding its `# ===== <project> =====` section here.
+
+## The Ansible toolchain (`bootstrap.sh`)
+
+Ansible and its Python dependencies (`ansible-core`, `cryptography` for Vault, `proxmoxer`, `passlib`, …) run from a **repo-local virtualenv**, never the system Python — installing `cryptography` system-wide clashes with distro packages. `bootstrap.sh` builds it, once per checkout (re-run after editing any `requirements.txt` / `requirements.yaml`):
+
+```bash
+Shared/Ansible/bootstrap.sh        # run from anywhere in the repo
+```
+
+It creates `<repo-root>/.venv/` (Python packages, from `requirements.txt`) and `<repo-root>/.ansible/collections/` (Galaxy collections, from this dir's `requirements.yaml` plus every `<repo-root>/*/requirements.yaml`). Both are gitignored. Every project's `Deploy.sh` / `Install-Prerequisites.sh` puts `.venv/bin` on `PATH` and exports `ANSIBLE_COLLECTIONS_PATH` automatically — nothing to activate. For an interactive Ansible shell: `source .venv/bin/activate && export ANSIBLE_COLLECTIONS_PATH="$PWD/.ansible/collections"` (from the repo root).
 
 ## Provisioning the shared account
 
 ```bash
+Shared/Ansible/bootstrap.sh                                         # once per checkout — the venv + collections
 cd Shared/Ansible
-cp ansible.cfg.example ansible.cfg                                   # one-time; works as-is
-cp inventory/hosts.ini.example inventory/hosts.ini                   # set your Proxmox node name(s) + address(es)
-cp template_configuration.yaml.example template_configuration.yaml   # set sysadmin_ssh_public_key (+ node/storage/bridge if you'll build templates)
-ansible-playbook create-pve_svc_user.yaml
+cp ansible.cfg.example ansible.cfg                                  # one-time; keep COMMON + the Shared/Ansible section
+cp inventory/hosts.ini.example inventory/hosts.ini                  # set your Proxmox node name(s) + address(es)
+cp template_configuration.yaml.example template_configuration.yaml  # set sysadmin_ssh_public_key (+ node/storage/bridge if you'll build templates)
+../../.venv/bin/ansible-playbook create-pve_svc_user.yaml           # or `source ../../.venv/bin/activate` first
 ```
 
-You're prompted once for a privileged admin login on the node(s) in `[proxmox_nodes]` (root, or an account that can `sudo` to root — it needs `pveum`, `useradd`, and to write `/etc/sudoers.d`). Requires a vault password file already in place (this directory's `ansible.cfg` `vault_identity_list`; see `Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md` section 2). The generated `group_vars/proxmox_cluster/vault.yaml` is **gitignored** — even as ciphertext its header names your vault-id — so it stays local; re-run this playbook on each machine that needs the credential (or copy the file across out of band).
+You're prompted once for a privileged admin login on the node(s) in `[proxmox_nodes]` (root, or an account that can `sudo` to root — it needs `pveum`, `useradd`, and to write `/etc/sudoers.d`). Requires a vault password file already in place (this directory's `ansible.cfg` `vault_identity_list`; see `docs/ANSIBLE_VAULT_GUIDE.md` section 2). The generated `group_vars/proxmox_cluster/vault.yaml` is **gitignored** — even as ciphertext its header names your vault-id — so it stays local; re-run this playbook on each machine that needs the credential (or copy the file across out of band).
 
 ## How a project consumes the credential
 
@@ -64,6 +76,7 @@ A project's playbook pulls it in with a relative `vars_files:` include — not a
 
 ```bash
 cd Shared/Ansible
+source ../../.venv/bin/activate                                     # the repo-local toolchain (bootstrap.sh)
 ansible-vault create template_configuration_vault.yaml               # see .example for the one variable it needs
 
 ansible-playbook create-template-linux.yaml                          # builds template_target
@@ -84,6 +97,8 @@ ansible-playbook create-template-linux.yaml -e template_target=T-Rocky-10-Cloud
 Every template gets the same baseline hardening regardless of OS: `root` gets a random, high-entropy password and is forbidden from SSH entirely (console/noVNC access only, and only in a genuine emergency — see the playbook's own header comment); a `sysadmin` account is created with full NOPASSWD sudo, SSH restricted to key-only (no password-based interactive login for **any** account on the box, not just this one), and an initial console-only password you set in `template_configuration_vault.yaml`. `systemd-ssh-generator` is also masked by default (`template_mask_ssh_generator: true`) — none of these VMs ever get a vsock device, so that generator's boot-time probe only ever fails and logs noise; set it to `false` in `template_configuration.yaml` if you specifically want vsock-based local SSH.
 
 Consuming projects (e.g. `Proxmox-Forgejo`) don't build templates themselves — they just point `vm_template_name`/`vm_template_vmid` at a `name`/`vmid` pair from `template_manifest.yaml`.
+
+**A clone starts on the build VLAN.** The template is built with its NIC on `template_network_bridge` (the pipeline-only build VLAN) and that is what a fresh `full: true` clone inherits. Every consuming project **must re-point the clone's `net0`** at its own bridge (and VLAN tag, if any) as part of provisioning — the project's preflight should require an explicit bridge value rather than letting the clone silently come up on the build VLAN with no route to anything.
 
 ## Disk layout & growing a template's disks
 
@@ -119,6 +134,18 @@ qm disk resize <vmid> scsi1 +50G      # on the Proxmox node; then reboot the VM
 sudo xfs_growfs /opt                  # xfs
 sudo resize2fs /dev/sdb               # ext4
 ```
+
+### Automated grow — `update-vm_disk-grow.yaml`
+
+One playbook does the node resize **and** the in-guest partition/filesystem grow, online, with no reboot:
+
+```bash
+ansible-playbook update-vm_disk-grow.yaml \
+  -e VMID=<vmid> -e blockdev=/dev/sdb -e size=+50G \
+  -e grow_ssh_user=<user> -e grow_ssh_key=<path to that user's key>
+```
+
+`blockdev` is the disk as the **guest** sees it (`/dev/sdX`); Proxmox presents `scsi0/scsi1/…` as `sda/sdb/…` in key order. The play resolves the VM's node, resizes the matching disk with `qm disk resize` (via the shared `svc_ansible` account), checks that *that* guest device actually grew — a wrong mapping aborts before touching anything — then auto-detects the topology and runs the right steps: whole-disk filesystem → `xfs_growfs`/`resize2fs`; single partition → `growpart` first; partition → LVM PV → root LV → `growpart` + `pvresize` + `lvextend -r`. Works for both the cloud-template layout (whole-disk `/opt`, single-partition root) and an ISO/Packer LVM root. Grow-only. Needs the qemu-guest-agent running in the VM and key SSH access.
 
 ### Thin vs. thick provisioning
 

@@ -2,6 +2,10 @@
 .proxmox_credentials.yaml
 config.yaml
 
+# Repo-local Ansible toolchain, built by Shared/Ansible/bootstrap.sh.
+.venv/
+.ansible/
+
 # This repo is public. An Ansible inventory carries real node names / IPs;
 # only the matching .example is committed. Bare pattern -> matches
 # inventory/hosts.ini at every level of the tree.

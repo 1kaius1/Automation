@@ -1,0 +1,279 @@
+---
+# ============================================
+# update-vm_disk-grow.yaml
+# ============================================
+#
+# Online, no-downtime grow of ONE disk on a Proxmox VM: resizes the
+# virtual disk on the node, then grows the partition (if any) and the
+# filesystem inside the guest. No reboot.
+#
+# Grow only. A target smaller than the current size fails at
+# `qm disk resize` ("shrinking disks is not supported").
+#
+# Usage:
+#   ansible-playbook update-vm_disk-grow.yaml \
+#     -e VMID=<vmid> \
+#     -e blockdev=/dev/sdb \
+#     -e size='<+5G | 40G | 1T>' \
+#     -e grow_ssh_user=<user> \
+#     -e grow_ssh_key=<path to that user's private key>
+#
+#   blockdev is the disk as the GUEST sees it (/dev/sdX). Proxmox presents
+#   scsi0/scsi1/... (and virtio0/1/...) to the guest as sda/sdb/... in key
+#   order, so /dev/sdb is the 2nd disk in `qm config`. Before touching any
+#   partition or filesystem the play checks that this exact guest device
+#   grew, so a wrong mapping aborts harmlessly.
+#
+# Handles every in-guest topology automatically:
+#   * whole-disk filesystem (no partition table)   -> grow the FS
+#   * one partition holding the filesystem          -> growpart -> grow FS
+#   * partition/disk -> LVM PV -> LV (the one at /)  -> growpart -> pvresize
+#                                                      -> lvextend -r
+#   xfs and ext4 are grown online (xfs_growfs / resize2fs); never shrunk.
+#
+# Requires: the shared svc_ansible credential (group_vars/proxmox_cluster/),
+# the VM's node present in [proxmox_nodes], the qemu-guest-agent running
+# in the VM, and key SSH access to the VM as grow_ssh_user.
+# ============================================
+
+- name: Resolve the VM and hand off to the guest
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - group_vars/proxmox_cluster/vars.yaml
+    - group_vars/proxmox_cluster/vault.yaml
+  module_defaults:
+    group/community.proxmox.proxmox:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+      api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: false
+
+  tasks:
+    - name: Validate the required parameters
+      ansible.builtin.assert:
+        that:
+          - VMID is defined
+          - (VMID | string) is match('^[0-9]+$')
+          - blockdev is defined
+          - blockdev is match('^/dev/sd[a-z]$')
+          - size is defined
+          - (size | string) is match('^\+?[0-9]+[KMGT]$')
+          - grow_ssh_user is defined and (grow_ssh_user | length) > 0
+          - grow_ssh_key is defined and (grow_ssh_key | length) > 0
+        fail_msg: >-
+          Required: -e VMID=<vmid> -e blockdev=/dev/sdX
+          -e size='<+5G|40G>' -e grow_ssh_user=<user> -e grow_ssh_key=<path>.
+        quiet: true
+
+    - name: Look up the VM
+      community.proxmox.proxmox_vm_info:
+        vmid: "{{ VMID }}"
+      register: grow_vm
+
+    - name: Fail if the VM does not exist
+      ansible.builtin.fail:
+        msg: "No VM with vmid {{ VMID }} is visible to this credential."
+      when: grow_vm.proxmox_vms | length == 0
+
+    - name: Record the VM's node
+      ansible.builtin.set_fact:
+        grow_vm_node: "{{ grow_vm.proxmox_vms[0].node }}"
+
+    - name: Read the VM's disk configuration from the node
+      ansible.builtin.command: "sudo -n qm config {{ VMID }}"
+      register: grow_qm_config
+      changed_when: false
+      delegate_to: "{{ grow_vm_node }}"
+
+    - name: Extract the resizable Proxmox disk keys, in order
+      ansible.builtin.set_fact:
+        grow_disk_keys: >-
+          {{ grow_qm_config.stdout_lines
+             | map('regex_search', '^(?:scsi|virtio|sata)[0-9]+:')
+             | select('string')
+             | map('regex_replace', ':$', '')
+             | sort | list }}
+
+    - name: Map {{ blockdev }} to its Proxmox disk key (position in key order)
+      ansible.builtin.set_fact:
+        grow_disk_index: "{{ 'abcdefghijklmnopqrstuvwxyz'.index(blockdev[-1]) }}"
+
+    - name: Fail if there is no disk at that position
+      ansible.builtin.fail:
+        msg: >-
+          {{ blockdev }} is disk #{{ grow_disk_index }} but the VM has only
+          {{ grow_disk_keys | length }} resizable disk(s): {{ grow_disk_keys }}.
+      when: (grow_disk_index | int) >= (grow_disk_keys | length)
+
+    - name: Resolve the target Proxmox disk key
+      ansible.builtin.set_fact:
+        grow_disk_key: "{{ grow_disk_keys[grow_disk_index | int] }}"
+
+    - name: Resolve the VM's IPv4 address via the guest agent
+      community.proxmox.proxmox_vm_info:
+        vmid: "{{ VMID }}"
+        network: true
+      register: grow_vm_net
+      until: >
+        grow_vm_net.proxmox_vms | length > 0 and
+        grow_vm_net.proxmox_vms[0].network is defined and
+        (grow_vm_net.proxmox_vms[0].network
+          | selectattr('name', 'ne', 'lo')
+          | map(attribute='ip-addresses') | flatten
+          | selectattr('ip-address-type', 'equalto', 'ipv4')
+          | list | length) > 0
+      retries: 12
+      delay: 5
+
+    - name: Extract the guest IPv4 address
+      ansible.builtin.set_fact:
+        grow_vm_ip: >-
+          {{ (grow_vm_net.proxmox_vms[0].network
+              | selectattr('name', 'ne', 'lo')
+              | map(attribute='ip-addresses') | flatten
+              | selectattr('ip-address-type', 'equalto', 'ipv4')
+              | map(attribute='ip-address') | first) }}
+
+    - name: Add the VM to the grow_target group for the next play
+      ansible.builtin.add_host:
+        name: "{{ grow_vm_ip }}"
+        groups: grow_target
+        ansible_host: "{{ grow_vm_ip }}"
+        ansible_user: "{{ grow_ssh_user }}"
+        ansible_ssh_private_key_file: "{{ grow_ssh_key }}"
+        ansible_python_interpreter: /usr/bin/python3
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        grow_blockdev: "{{ blockdev }}"
+        grow_disk_key: "{{ grow_disk_key }}"
+        grow_vm_node: "{{ grow_vm_node }}"
+
+    - name: Plan
+      ansible.builtin.debug:
+        msg: >-
+          VM {{ VMID }} on {{ grow_vm_node }} ({{ grow_vm_ip }}):
+          {{ grow_disk_key }} == {{ blockdev }} in the guest -> resize {{ size }}, grow online.
+
+- name: Resize on the node, then grow the partition + filesystem in the guest
+  hosts: grow_target
+  gather_facts: false
+
+  tasks:
+    - name: Wait until the VM accepts an SSH session
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+
+    - name: Record the pre-resize size of {{ grow_blockdev }}
+      ansible.builtin.command: "lsblk -bdno SIZE {{ grow_blockdev }}"
+      register: grow_size_before
+      changed_when: false
+
+    - name: "Resize {{ grow_disk_key }} to {{ size }} on {{ grow_vm_node }}"
+      # Runs as svc_ansible on the node with explicit `sudo -n qm` (that
+      # account's only sudo grant) — NOT an Ansible become.
+      ansible.builtin.command: "sudo -n qm disk resize {{ VMID }} {{ grow_disk_key }} {{ size }}"
+      register: grow_resize
+      changed_when: true
+      delegate_to: "{{ grow_vm_node }}"
+
+    - name: Ask the kernel to re-read the resized device
+      ansible.builtin.shell: "echo 1 > /sys/block/{{ grow_blockdev | basename }}/device/rescan"
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Let udev settle
+      ansible.builtin.command: "udevadm settle --timeout=10"
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Record the post-resize size of {{ grow_blockdev }}
+      ansible.builtin.command: "lsblk -bdno SIZE {{ grow_blockdev }}"
+      register: grow_size_after
+      changed_when: false
+
+    - name: Abort if {{ grow_blockdev }} did not grow (wrong /dev/sdX -> disk mapping)
+      ansible.builtin.fail:
+        msg: >-
+          {{ grow_blockdev }} is still
+          {{ (grow_size_after.stdout | int / 1073741824) | round(2) }} GiB after
+          resizing {{ grow_disk_key }}. The /dev/sdX -> Proxmox disk mapping was
+          wrong — nothing in the guest was touched. Check `qm config {{ VMID }}`
+          and re-run naming the correct /dev/sdX.
+      when: >
+        (grow_size_after.stdout | int) < (grow_size_before.stdout | int)
+        or ((size is match('^\+')) and (grow_size_after.stdout | int) <= (grow_size_before.stdout | int))
+
+    - name: Grow the partition (if any) and the filesystem — online, no reboot
+      become: true
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dev="{{ grow_blockdev }}"
+        disk_fstype="$(lsblk -dno FSTYPE "$dev")"
+        root_src="$(findmnt -no SOURCE / || true)"
+
+        grow_fs() {   # $1 = fs device, $2 = mountpoint
+          local fsdev="$1" mp="$2" ft
+          [ -n "$mp" ] || { echo "$fsdev is not mounted — cannot grow it online"; exit 1; }
+          ft="$(findmnt -no FSTYPE "$mp")"
+          case "$ft" in
+            xfs)            echo "xfs_growfs $mp"; xfs_growfs "$mp" ;;
+            ext4|ext3|ext2) echo "resize2fs $fsdev"; resize2fs "$fsdev" ;;
+            *) echo "unsupported filesystem '$ft' on $fsdev"; exit 1 ;;
+          esac
+        }
+
+        lvm_grow() {  # $1 = PV device
+          echo "pvresize $1"; pvresize "$1"
+          case "$root_src" in
+            /dev/mapper/*|/dev/dm-*|/dev/*/*) : ;;
+            *) echo "cannot identify the root LV (findmnt SOURCE / = '$root_src')"; exit 1 ;;
+          esac
+          echo "lvextend -r -l +100%FREE $root_src"
+          lvextend -r -l +100%FREE "$root_src"   # -r grows the filesystem too
+        }
+
+        if [ "$disk_fstype" = "LVM2_member" ]; then
+          lvm_grow "$dev"; echo "DONE (lvm, whole-disk PV)"; exit 0
+        fi
+        if [ -n "$disk_fstype" ]; then
+          grow_fs "$dev" "$(findmnt -no TARGET "$dev" || true)"
+          echo "DONE (whole-disk $disk_fstype)"; exit 0
+        fi
+
+        # Partition table present.
+        part="$(lsblk -rno NAME,TYPE "$dev" | awk '$2=="part"{print $1; exit}')"
+        [ -n "$part" ] || { echo "no partition and no whole-disk FS on $dev"; exit 1; }
+        partdev="/dev/$part"
+        partnum="$(echo "$part" | grep -o '[0-9]*$')"
+        echo "growpart $dev $partnum"
+        growpart "$dev" "$partnum" || true      # exits 1 when already full-size
+        partprobe "$dev" || true
+        udevadm settle --timeout=10 || true
+
+        if [ "$(lsblk -rno FSTYPE "$partdev" | head -n1)" = "LVM2_member" ]; then
+          lvm_grow "$partdev"; echo "DONE (lvm)"; exit 0
+        fi
+        grow_fs "$partdev" "$(findmnt -no TARGET "$partdev" || true)"
+        echo "DONE (partition $(findmnt -no FSTYPE "$partdev"))"
+      register: grow_guest
+      changed_when: "'DONE' in grow_guest.stdout"
+
+    - name: What the guest did
+      ansible.builtin.debug:
+        msg: "{{ grow_guest.stdout_lines }}"
+
+    - name: Show the resulting mounted sizes
+      ansible.builtin.shell: |
+        set -e
+        for mp in / /opt; do
+          findmnt -nbo TARGET,SIZE,FSTYPE,SOURCE "$mp" 2>/dev/null || true
+        done
+      register: grow_final
+      changed_when: false
+
+    - name: Mounted sizes now
+      ansible.builtin.debug:
+        msg: "{{ grow_final.stdout_lines }}"

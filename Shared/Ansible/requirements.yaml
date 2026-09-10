@@ -1,0 +1,17 @@
+---
+# Ansible Galaxy collections for the shared playbooks
+# (create-pve_svc_user.yaml, create-template-linux.yaml,
+# update-vm_disk-grow.yaml).
+#
+# bootstrap.sh installs this file plus every <repo-root>/*/requirements.yaml
+# into <repo-root>/.ansible/collections (repo-local, not ~/.ansible).
+
+collections:
+  # Proxmox VM / node / storage / backup / disk modules. NOT the
+  # deprecated community.general.proxmox.
+  - name: community.proxmox
+    version: ">=1.5.0"
+
+  # community.general.pacman, community.general.filesystem, ufw, ...
+  - name: community.general
+    version: ">=8.0.0"

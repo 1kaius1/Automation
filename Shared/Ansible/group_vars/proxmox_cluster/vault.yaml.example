@@ -4,7 +4,7 @@
 #
 # The real vault.yaml is generated for you by running
 # create-pve_svc_user.yaml — you should not hand-write it.
-# See Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md if you're new to
+# See Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md if you're new to
 # Ansible Vault and want to understand what's about to happen.
 
 vault_proxmox_api_token_secret: "00000000-0000-0000-0000-000000000000"

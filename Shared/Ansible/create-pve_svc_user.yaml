@@ -48,7 +48,12 @@
 #
 # Requires a vault password file already in place — this directory's
 # ansible.cfg vault_identity_list; see
-# Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md section 2.
+# docs/ANSIBLE_VAULT_GUIDE.md section 2.
+#
+# If vault_identity_list has MORE THAN ONE identity, also pass
+#   -e vault_encrypt_id=<label>
+# naming the identity to encrypt group_vars/proxmox_cluster/vault.yaml
+# with (a bare `ansible-vault encrypt` can't choose among several).
 # ============================================
 
 # ============================================
@@ -382,6 +387,11 @@
     vault_file_path: "{{ hostvars['localhost']['vault_file_path'] }}"
     vars_file_path: "{{ hostvars['localhost']['vars_file_path'] }}"
     api_token_needed: "{{ hostvars['localhost']['api_token_needed'] | bool }}"
+    # Which vault-id to encrypt group_vars/proxmox_cluster/vault.yaml with.
+    # Only needed when ansible.cfg's vault_identity_list has more than one
+    # identity (a bare `ansible-vault encrypt` can't guess which). Pass
+    # -e vault_encrypt_id=<label>; leave unset for a single-identity setup.
+    vault_encrypt_id: ""
 
   tasks:
     - name: Skip credential write — existing token kept
@@ -424,7 +434,10 @@
           no_log: true
 
         - name: Encrypt the staging file in place with Ansible Vault
-          ansible.builtin.command: "ansible-vault encrypt {{ vault_file_path }}"
+          ansible.builtin.command: >-
+            ansible-vault encrypt
+            {{ ('--encrypt-vault-id ' ~ vault_encrypt_id) if (vault_encrypt_id | default('', true) | length > 0) else '' }}
+            {{ vault_file_path }}
           changed_when: true
 
         - name: Confirm the credential is now encrypted

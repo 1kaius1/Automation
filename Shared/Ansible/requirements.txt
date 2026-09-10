@@ -1,0 +1,13 @@
+# Python packages for the Ansible control node.
+#
+# bootstrap.sh installs these into <repo-root>/.venv so they never touch
+# the system Python — `cryptography` in particular clashes with distro
+# packages, which is the whole reason this venv exists.
+#
+# Pinned to the versions this repo is developed against; bump deliberately.
+
+ansible-core==2.21.3
+cryptography>=42          # ansible-vault (encrypt/decrypt group_vars/*/vault.yaml)
+proxmoxer>=2.0           # community.proxmox API modules
+requests>=2.31           # proxmoxer transport
+passlib>=1.7             # the `password_hash` Jinja filter (used in the shared playbooks)

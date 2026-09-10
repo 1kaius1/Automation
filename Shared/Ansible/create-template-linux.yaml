@@ -77,7 +77,7 @@
 # create-pve_svc_user.yaml — which sets up BOTH the cluster API token
 # (group_vars/proxmox_cluster/) and, on every node, the SSH account +
 # scoped sudo + the image cache dir + the snippet storage this playbook
-# needs. See Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md if unfamiliar.
+# needs. See docs/ANSIBLE_VAULT_GUIDE.md if unfamiliar.
 #
 # Networking: the build VM's static IP is delivered as a netplan-v2
 # cloud-init network-config snippet (written to template_snippet_storage,

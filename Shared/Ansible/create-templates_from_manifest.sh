@@ -27,6 +27,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Use the repo-local Ansible toolchain (Shared/Ansible/bootstrap.sh).
+ROOT="$(git rev-parse --show-toplevel)"
+if [ ! -x "${ROOT}/.venv/bin/ansible-playbook" ]; then
+  echo "No Ansible venv at ${ROOT}/.venv — run ${ROOT}/Shared/Ansible/bootstrap.sh first" >&2
+  exit 1
+fi
+export PATH="${ROOT}/.venv/bin:${PATH}"
+export ANSIBLE_COLLECTIONS_PATH="${ROOT}/.ansible/collections"
+
 MANIFEST="template_manifest.yaml"
 PLAYBOOK="create-template-linux.yaml"
 CONFIG="template_configuration.yaml"

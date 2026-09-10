@@ -1,22 +1,63 @@
-# Ansible Configuration File
-# ==========================
-# Used only when running create-pve_svc_user.yaml directly
-# from this directory.
+# Ansible Configuration File — CANONICAL EXAMPLE
+# ==============================================
+# This is the single committed ansible.cfg example for the whole repo.
+# Every Ansible project (Shared/Ansible, Proxmox-Forgejo, Proxmox-NextCloud,
+# ...) copies it to its own real, gitignored `ansible.cfg`:
+#
+#   cd <project dir>
+#   cp ../Shared/Ansible/ansible.cfg.example ansible.cfg      # from a project
+#   cp ansible.cfg.example ansible.cfg                        # from here
+#
+# Keep the COMMON section verbatim; keep your project's own section; the
+# other projects' sections are harmless to leave in place (they are
+# comment-only today). Adding a new project to the repo means adding a
+# "# ===== <project> =====" section below.
+#
+# The real ansible.cfg is gitignored because this repo is public and the
+# file can carry a personalised vault-id label / password-file name. See
+# docs/ANSIBLE_VAULT_GUIDE.md for a first-time Vault setup.
+
+# ============================================================
+# COMMON — every Ansible project in this repo uses these as-is
+# ============================================================
 
 [defaults]
+# CWD-relative: resolved against the directory you run ansible-playbook
+# from, so each project picks up its own inventory/hosts.ini.
 inventory = ./inventory/hosts.ini
 deprecation_warnings = False
 retry_files_enabled = False
 force_color = True
+timeout = 30
 host_key_checking = False
+gathering = smart
+fact_caching = jsonfile
+fact_caching_connection = /tmp/ansible_facts
+fact_caching_timeout = 3600
 
-# Vault password file for encrypting/decrypting group_vars/proxmox_cluster/vault.yaml.
-# See Proxmox-Forgejo/docs/ANSIBLE_VAULT_GUIDE.md if this is your first time
-# setting this up — you create this file once, it never gets committed.
-#
-# This whole file is gitignored (copy this .example to ansible.cfg to get
-# started) so you can rename the "homelab" label/filename to something
-# personal without risking a commit — must match whatever label/filename
-# Proxmox-Forgejo/ansible.cfg uses, since both decrypt the one shared
-# credential in this directory.
+# One shared vault identity / master password for the whole repo — the
+# same label/file decrypts group_vars/proxmox_cluster/vault.yaml AND each
+# project's own inventory/group_vars/*/vault.yaml. Rename the label and
+# the filename together if you want something personal; nothing in any
+# playbook hardcodes "homelab".
 vault_identity_list = homelab@~/.ansible/vault_pass_homelab.txt
+
+[ssh_connection]
+pipelining = True
+ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+
+# ============================================================
+# Shared/Ansible — (nothing project-specific yet)
+# ============================================================
+# Ansible-level settings that only the shared playbooks
+# (create-pve_svc_user.yaml, create-template-linux.yaml, ...) need.
+
+# ============================================================
+# Proxmox-Forgejo — (nothing project-specific yet)
+# ============================================================
+# e.g. a collections_path / roles_path / callbacks_enabled entry this
+# project needs and the others do not.
+
+# ============================================================
+# Proxmox-NextCloud — (nothing project-specific yet)
+# ============================================================
