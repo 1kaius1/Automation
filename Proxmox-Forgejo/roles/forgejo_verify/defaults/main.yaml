@@ -1,0 +1,2 @@
+---
+forgejo_healthz_path: /api/healthz

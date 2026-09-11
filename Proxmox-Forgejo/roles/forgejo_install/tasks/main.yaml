@@ -1,0 +1,91 @@
+---
+# ============================================
+# Forgejo Install
+# ============================================
+#
+# Checksum-verified binary download (fails closed on mismatch — no
+# unverified binary is ever installed), rendered config/unit from
+# templates (no inline copy: content: blocks), then an idempotent
+# first-admin bootstrap.
+# ============================================
+
+- name: Download the Forgejo binary (checksum-verified against the published .sha256)
+  ansible.builtin.get_url:
+    url: "{{ forgejo_download_url }}"
+    dest: "{{ forgejo_install_dir }}/forgejo-{{ forgejo_version_number }}"
+    checksum: "sha256:{{ forgejo_checksum_url }}"
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Point the stable forgejo symlink at this version
+  ansible.builtin.file:
+    src: "{{ forgejo_install_dir }}/forgejo-{{ forgejo_version_number }}"
+    dest: "{{ forgejo_install_dir }}/forgejo"
+    state: link
+    force: true
+  become: true
+  notify: Restart forgejo
+
+- name: Render app.ini
+  ansible.builtin.template:
+    src: app.ini.j2
+    dest: "{{ forgejo_config_dir }}/app.ini"
+    owner: "{{ forgejo_system_user }}"
+    group: "{{ forgejo_system_user }}"
+    mode: '0640'
+  become: true
+  no_log: true
+  notify: Restart forgejo
+
+- name: Render the forgejo systemd unit
+  ansible.builtin.template:
+    src: forgejo.service.j2
+    dest: /etc/systemd/system/forgejo.service
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - Reload systemd
+    - Restart forgejo
+
+- name: Flush handlers so the service is up before we bootstrap the admin account
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure forgejo is enabled and started
+  ansible.builtin.systemd:
+    name: forgejo
+    state: started
+    enabled: true
+  become: true
+
+- name: Wait for Forgejo to accept connections
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ forgejo_http_port }}"
+    timeout: 60
+
+- name: Check whether the admin account already exists
+  ansible.builtin.command: >
+    {{ forgejo_install_dir }}/forgejo admin user list
+    --config {{ forgejo_config_dir }}/app.ini
+  become: true
+  become_user: "{{ forgejo_system_user }}"
+  register: forgejo_user_list
+  changed_when: false
+
+- name: Create the first admin account (only if it doesn't already exist)
+  ansible.builtin.command: >
+    {{ forgejo_install_dir }}/forgejo admin user create
+    --config {{ forgejo_config_dir }}/app.ini
+    --admin
+    --username {{ forgejo_admin_username }}
+    --password {{ forgejo_admin_password }}
+    --email {{ forgejo_admin_email }}
+    --must-change-password=false
+  become: true
+  become_user: "{{ forgejo_system_user }}"
+  when: forgejo_admin_username not in forgejo_user_list.stdout
+  no_log: true

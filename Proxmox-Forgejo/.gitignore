@@ -1,0 +1,31 @@
+# SSH key generated for the Forgejo VM by Deploy.sh
+ssh_keys/
+
+# Site-specific config — real node names/IPs, storage/bridge names, domain,
+# admin email, internal CIDRs, and (in ansible.cfg) an optional personal
+# vault-id label/filename. This repo is public; only the matching .example
+# files (with placeholder/generic values) are committed. Copy an .example
+# to its real name and fill it in — see README.md. (ansible.cfg is copied
+# from ../Shared/Ansible/ansible.cfg.example, the one canonical example.)
+ansible.cfg
+inventory/hosts.ini
+inventory/group_vars/proxmox_pve1/vars.yaml
+inventory/group_vars/forgejo/vars.yaml
+
+# Ansible Vault ciphertext. The $ANSIBLE_VAULT;1.2;AES256;<vault-id> header
+# is cleartext and the <vault-id> label names a real credential — so even
+# encrypted this isn't committed; only vault.yaml.example is. Same shared
+# vault password as the rest of the repo. Recreate locally:
+#   ansible-vault create inventory/group_vars/forgejo/vault.yaml
+inventory/group_vars/forgejo/vault.yaml
+
+# Personal, not for the public repo
+Deploy-Cleanup.sh
+.deploy_cleanup_*.yaml
+
+# Ansible artifacts
+*.retry
+
+# A vault file ever decrypted-in-place by mistake (ansible-vault decrypt)
+# must never be committed plaintext — this catches the obvious naming slip
+*.vault.yaml.decrypted

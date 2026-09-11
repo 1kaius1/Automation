@@ -1,0 +1,44 @@
+---
+# ============================================
+# Forgejo Backup (on-demand vzdump)
+# ============================================
+#
+# Triggers a vzdump of the Forgejo VM to backup_storage_target, which is
+# expected to be OFF-NODE storage (Proxmox Backup Server, or an NFS/CIFS
+# share) — a same-node backup does not survive that node's hardware
+# failure. See the Disaster Recovery section of README.md.
+#
+# This is the on-demand / cron-driven alternative. The simpler default
+# is registering forgejo_vm_vmid in Proxmox's own Datacenter -> Backup
+# scheduled job pointed at the same off-node storage — no Ansible
+# required for that path at all. Use whichever fits your workflow; both
+# write to the same off-node target.
+#
+# Expects forgejo_vm_vmid to already be set (from create_forgejo_vm's
+# cached fact, or passed explicitly if run standalone via backup_forgejo.yaml).
+# ============================================
+
+- name: Fail if forgejo_vm_vmid isn't known
+  ansible.builtin.fail:
+    msg: >
+      forgejo_vm_vmid is not set. Run this after create_forgejo_vm (same
+      playbook run), or pass -e forgejo_vm_vmid=<vmid> when running
+      backup_forgejo.yaml standalone.
+  when: forgejo_vm_vmid is not defined
+
+- name: Trigger a vzdump backup to the off-node target
+  community.proxmox.proxmox_backup:
+    mode: include
+    vmids:
+      - "{{ forgejo_vm_vmid }}"
+    node: "{{ proxmox_node }}"
+    storage: "{{ backup_storage_target }}"
+    backup_mode: snapshot
+    compress: zstd
+    wait: true
+    wait_timeout: "{{ forgejo_backup_wait_timeout }}"
+  register: forgejo_backup_result
+
+- name: Backup complete
+  ansible.builtin.debug:
+    msg: "Backup of VMID {{ forgejo_vm_vmid }} to {{ backup_storage_target }} finished: {{ forgejo_backup_result }}"

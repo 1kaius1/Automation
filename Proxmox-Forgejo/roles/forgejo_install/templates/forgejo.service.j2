@@ -1,0 +1,31 @@
+; Managed by Ansible (roles/forgejo_install) — do not edit by hand.
+
+[Unit]
+Description=Forgejo (self-hosted Git service)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User={{ forgejo_system_user }}
+Group={{ forgejo_system_user }}
+WorkingDirectory={{ forgejo_data_dir }}
+ExecStart={{ forgejo_install_dir }}/forgejo web --config {{ forgejo_config_dir }}/app.ini
+Restart=on-failure
+RestartSec=5
+
+; --- Hardening ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths={{ forgejo_data_dir }} {{ forgejo_log_dir }}
+
+[Install]
+WantedBy=multi-user.target

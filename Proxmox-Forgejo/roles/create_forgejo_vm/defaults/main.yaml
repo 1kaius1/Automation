@@ -1,0 +1,14 @@
+---
+forgejo_vmid_min: 100
+ssh_boot_wait_seconds: 20
+
+# Optional 802.1Q VLAN tag for net0. Leave "" when network_bridge is a
+# plain per-VLAN bridge on a tagged uplink; set the tag when it's a
+# VLAN-aware bridge. Overridden in inventory/group_vars/proxmox_pve1.
+network_vlan_tag: ""
+
+# Cloud-init DNS for the VM. REQUIRED when forgejo_ip_config is a static
+# CIDR (there is no DHCP to hand out a resolver); optional on "dhcp".
+# Space-separated for more than one. Set in inventory/group_vars/forgejo.
+forgejo_nameservers: ""
+forgejo_searchdomains: ""

@@ -1,0 +1,20 @@
+---
+# Ansible Galaxy Requirements
+# ============================
+# Collections needed for the Forgejo deployment. Install with:
+#   ansible-galaxy collection install -r requirements.yaml
+
+collections:
+  # Proxmox VM/backup/info modules. NOT community.general.proxmox, which
+  # is deprecated — see the mono-repo root plan notes for why
+  # Proxmox-NextCloud still uses the old module and shouldn't be copied.
+  - name: community.proxmox
+    version: ">=1.5.0"
+
+  # ufw firewall module
+  - name: community.general
+    version: ">=8.0.0"
+
+  # PostgreSQL database/role management
+  - name: community.postgresql
+    version: ">=3.0.0"

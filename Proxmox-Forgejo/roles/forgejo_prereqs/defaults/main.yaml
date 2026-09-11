@@ -1,0 +1,17 @@
+---
+forgejo_system_user: git
+
+# Disk layout follows the shared two-disk template (Shared/Ansible):
+# /opt/app = applications, /opt/data = application data AND logs. Forgejo
+# owns /opt/app/forgejo (binary) and /opt/data/forgejo (all state). The
+# data dir doubles as the git user's home — matches Forgejo's own
+# container layout (HOME=/data/git); its built-in SSH server writes no
+# ~/.ssh/authorized_keys, so nothing collides with repositories/ etc.
+# /etc/forgejo stays the config dir — config, not app/data, and the
+# service only reads it.
+forgejo_app_dir: /opt/app/forgejo
+forgejo_home_dir: /opt/data/forgejo
+forgejo_config_dir: /etc/forgejo
+forgejo_data_dir: /opt/data/forgejo
+forgejo_log_dir: "{{ forgejo_data_dir }}/log"
+forgejo_repo_root: "{{ forgejo_data_dir }}/repositories"

@@ -1,0 +1,98 @@
+---
+# ============================================
+# Forgejo Database (PostgreSQL)
+# ============================================
+#
+# Installs and configures PostgreSQL, creates the forgejo database/role.
+# No PostgreSQL superuser secret is ever vaulted — admin tasks here run
+# as the "postgres" OS/DB user via local peer auth over the Unix socket;
+# network auth is never enabled for the superuser. The application user
+# (forgejo) does use password auth, but only over loopback TCP — see the
+# pg_hba entry below.
+# ============================================
+
+- name: Install PostgreSQL
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - python3-psycopg2
+    state: present
+  become: true
+
+- name: Ensure PostgreSQL is running and enabled
+  ansible.builtin.systemd:
+    name: postgresql
+    state: started
+    enabled: true
+  become: true
+
+- name: Locate postgresql.conf
+  ansible.builtin.find:
+    paths: /etc/postgresql
+    patterns: postgresql.conf
+    recurse: true
+  register: postgresql_conf_search
+  become: true
+
+- name: Fail if postgresql.conf couldn't be found
+  ansible.builtin.fail:
+    msg: "postgresql.conf not found under /etc/postgresql — is PostgreSQL actually installed?"
+  when: postgresql_conf_search.files | length == 0
+
+- name: Confirm listen_addresses is loopback-only
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_conf_search.files[0].path }}"
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '{{ postgresql_listen_addresses }}'"
+  become: true
+  notify: Restart postgresql
+
+- name: Create the forgejo database role
+  community.postgresql.postgresql_user:
+    name: "{{ forgejo_db_user }}"
+    password: "{{ forgejo_db_password }}"
+    encrypted: true
+  become: true
+  become_user: postgres
+  no_log: true
+
+- name: Create the forgejo database, owned by that role
+  # Ownership grants forgejo_db_user full rights on its own database — no
+  # separate community.postgresql.postgresql_privs grant needed.
+  #
+  # C.UTF-8, not en_US.UTF-8 — Debian's minimal cloud image only generates
+  # C.UTF-8 by default (`locale -a` confirms no en_US.UTF-8 anywhere,
+  # and installing/generating it is unnecessary extra setup Forgejo
+  # doesn't need). C.UTF-8 gives UTF-8 encoding with plain byte-order
+  # (non-locale-aware) collation, which is fine for Forgejo's own data.
+  community.postgresql.postgresql_db:
+    name: "{{ forgejo_db_name }}"
+    owner: "{{ forgejo_db_user }}"
+    encoding: UTF-8
+    lc_collate: C.UTF-8
+    lc_ctype: C.UTF-8
+  become: true
+  become_user: postgres
+
+- name: Locate pg_hba.conf
+  ansible.builtin.find:
+    paths: /etc/postgresql
+    patterns: pg_hba.conf
+    recurse: true
+  register: pg_hba_search
+  become: true
+
+- name: Fail if pg_hba.conf couldn't be found
+  ansible.builtin.fail:
+    msg: "pg_hba.conf not found under /etc/postgresql — is PostgreSQL actually installed?"
+  when: pg_hba_search.files | length == 0
+
+- name: Allow the forgejo app user to authenticate over loopback TCP with a password
+  ansible.builtin.blockinfile:
+    path: "{{ pg_hba_search.files[0].path }}"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK — forgejo app user"
+    insertbefore: "^host\\s+all\\s+all"
+    block: |
+      host    {{ forgejo_db_name }}    {{ forgejo_db_user }}    127.0.0.1/32    scram-sha-256
+  become: true
+  notify: Reload postgresql

@@ -1,0 +1,72 @@
+---
+# Forgejo deployment settings. EDIT EVERY "REPLACE_ME" VALUE BELOW BEFORE
+# FIRST RUN. Secrets referenced here (the {{ vault_* }} lines) are defined
+# in the sibling vault.yaml — see vault.yaml.example and
+# Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md.
+
+forgejo_hostname: "forgejo"
+
+# Non-root cloud-init account Ansible connects as (gets NOPASSWD sudo via
+# Proxmox's cloud-init integration). Deliberately not root — matches the
+# "no VM root password, SSH-key-only" secret-footprint decision in README.md.
+forgejo_deploy_user: "forgejo-deploy"
+
+# Externally-facing domain, fronted by your existing shared reverse proxy.
+# TLS terminates there, not on this VM — see README.md.
+forgejo_domain: "REPLACE_ME.example.home"
+
+# Pin a specific release rather than tracking "latest" — check
+# https://codeberg.org/forgejo/forgejo/releases for the current stable
+# version before first deploy, and bump this deliberately when you want
+# to upgrade.
+forgejo_version: "REPLACE_ME_FORGEJO_VERSION"
+
+forgejo_db_name: "forgejo"
+forgejo_db_user: "forgejo"
+
+forgejo_admin_username: "forgejo-admin"
+forgejo_admin_email: "admin@REPLACE_ME.example.home"
+
+# VM sizing
+forgejo_cores: 2
+forgejo_memory: 2048
+forgejo_disk_size: 20
+
+# "dhcp", or a static CIDR like "192.168.1.50/24,gw=192.168.1.1"
+forgejo_ip_config: "dhcp"
+
+# Cloud-init DNS for the VM. REQUIRED with a static forgejo_ip_config
+# (nothing hands out a resolver otherwise); optional on "dhcp". Space-
+# separated for multiple, e.g. "10.0.0.53 1.1.1.1".
+forgejo_nameservers: ""
+# Optional DNS search domain(s).
+forgejo_searchdomains: ""
+
+# HTTP port Forgejo listens on (proxied by your shared reverse proxy —
+# never exposed directly to the internet).
+forgejo_http_port: 3000
+
+# Forgejo's own git-over-SSH server, INSIDE the VM. Deliberately not 22,
+# which stays the VM's OpenSSH port for Ansible/management access. Only
+# the reverse proxy reaches this port (ufw restricts it to
+# reverse_proxy_source_cidr, same as forgejo_http_port).
+forgejo_ssh_port: 2222
+
+# The git-over-SSH port CLIENTS connect to on the reverse proxy, and the
+# port Forgejo advertises in clone URLs (ssh://git@<domain>:<port>/...).
+# Leave equal to forgejo_ssh_port when there's no SSH proxy; set it to the
+# proxy's `stream {}` listen port when there is — see
+# docs/reverse-proxy.nginx.conf.example. A high, non-standard port (e.g.
+# 10000) keeps Forgejo's git-SSH off the ports mass scanners hammer.
+forgejo_ssh_public_port: 2222
+
+# CIDR of your shared reverse proxy — ufw restricts inbound
+# forgejo_http_port to only this source, never the world.
+reverse_proxy_source_cidr: "REPLACE_ME.0.0.0/32"
+
+forgejo_db_password: "{{ vault_forgejo_db_password }}"
+forgejo_admin_password: "{{ vault_forgejo_admin_password }}"
+forgejo_secret_key: "{{ vault_forgejo_secret_key }}"
+forgejo_internal_token: "{{ vault_forgejo_internal_token }}"
+forgejo_jwt_secret: "{{ vault_forgejo_jwt_secret }}"
+forgejo_lfs_jwt_secret: "{{ vault_forgejo_lfs_jwt_secret }}"

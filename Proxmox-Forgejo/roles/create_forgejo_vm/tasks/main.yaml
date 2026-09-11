@@ -1,0 +1,198 @@
+---
+# ============================================
+# Create Forgejo VM (clone from the cloud-init template)
+# ============================================
+#
+# Clones vm_template_name via the API (community.proxmox.proxmox_kvm),
+# applies cloud-init settings, resizes the disk, starts it, resolves its
+# IP (static or via the QEMU guest agent for DHCP), waits for SSH, then
+# add_hosts it into the [forgejo] group for the next play. Auth is
+# inherited from the play's module_defaults — see deploy_forgejo.yaml.
+# ============================================
+
+- name: Get next available VMID from the API
+  ansible.builtin.uri:
+    url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/nextid"
+    method: GET
+    headers:
+      Authorization: "PVEAPIToken={{ proxmox_api_token_id }}={{ proxmox_api_token_secret }}"
+    validate_certs: no
+  register: next_vmid_response
+
+- name: Set the new VM's vmid
+  ansible.builtin.set_fact:
+    forgejo_vmid: "{{ next_vmid_response.json.data | int }}"
+
+- name: Sanity-check the assigned vmid
+  ansible.builtin.fail:
+    msg: "Unexpected vmid {{ forgejo_vmid }} from the API (< {{ forgejo_vmid_min }})."
+  when: forgejo_vmid | int < forgejo_vmid_min
+
+- name: Verify the SSH public key exists
+  ansible.builtin.stat:
+    path: "{{ ssh_public_key_path }}"
+  register: ssh_key_stat
+
+- name: Fail if the SSH public key is missing
+  ansible.builtin.fail:
+    msg: |
+      SSH public key not found at {{ ssh_public_key_path }}.
+      Run Deploy.sh (which generates one) or ssh-keygen manually before
+      running this playbook directly.
+  when: not ssh_key_stat.stat.exists
+
+- name: Read the SSH public key
+  ansible.builtin.slurp:
+    path: "{{ ssh_public_key_path }}"
+  register: ssh_public_key_content
+
+- name: Clone the cloud-init template
+  community.proxmox.proxmox_kvm:
+    node: "{{ proxmox_node }}"
+    clone: "{{ vm_template_name }}"
+    vmid: "{{ vm_template_vmid }}"
+    newid: "{{ forgejo_vmid }}"
+    name: "{{ forgejo_hostname }}"
+    storage: "{{ storage_pool }}"
+    format: raw
+    full: true
+    timeout: 300
+
+- name: Apply cloud-init settings, network and sizing to the clone
+  # The template is built on the shared build VLAN, so its net0 points at
+  # that bridge — every consuming project MUST re-point net0 at its own
+  # bridge here (changing net requires update_unsafe). nameservers is
+  # required with a static forgejo_ip_config (no DHCP to supply a
+  # resolver); ciupgrade is disabled because forgejo_prereqs runs its own
+  # apt update + install, and a first-boot dist-upgrade only slows the
+  # boot (and stalls it on any DNS/mirror hiccup).
+  community.proxmox.proxmox_kvm:
+    node: "{{ proxmox_node }}"
+    vmid: "{{ forgejo_vmid }}"
+    update: true
+    update_unsafe: true
+    cores: "{{ forgejo_cores }}"
+    memory: "{{ forgejo_memory }}"
+    ciuser: "{{ forgejo_deploy_user }}"
+    ciupgrade: false
+    sshkeys: "{{ ssh_public_key_content.content | b64decode | trim }}"
+    net:
+      net0: "virtio,bridge={{ network_bridge }}{{ (',tag=' ~ (network_vlan_tag | string)) if (network_vlan_tag | default('') | string | length > 0) else '' }}"
+    nameservers: "{{ forgejo_nameservers | default(omit, true) }}"
+    searchdomains: "{{ forgejo_searchdomains | default(omit, true) }}"
+    ipconfig:
+      ipconfig0: "{{ 'ip=dhcp' if forgejo_ip_config == 'dhcp' else 'ip=' + forgejo_ip_config }}"
+
+- name: Resize the cloned disk to forgejo_disk_size
+  # A bare number (e.g. "20") is NOT interpreted as GiB here despite
+  # forgejo_disk_size being documented in GB — the underlying Proxmox
+  # resize API needs an explicit unit suffix, or it treats the value as
+  # a tiny absolute size and fails with "shrinking disks is not
+  # supported" against any real template disk.
+  community.proxmox.proxmox_disk:
+    vmid: "{{ forgejo_vmid }}"
+    disk: scsi0
+    state: resized
+    size: "{{ forgejo_disk_size }}G"
+
+- name: Start the VM
+  community.proxmox.proxmox_kvm:
+    node: "{{ proxmox_node }}"
+    vmid: "{{ forgejo_vmid }}"
+    state: started
+
+- name: Wait for cloud-init to have a chance to run
+  ansible.builtin.pause:
+    seconds: "{{ ssh_boot_wait_seconds }}"
+    prompt: "Waiting for the VM to boot and cloud-init to configure networking/SSH..."
+
+- name: Use the static IP directly, if configured
+  # forgejo_ip_config is stored WITHOUT the "ip=" prefix (e.g.
+  # "192.168.1.50/24,gw=192.168.1.1") — the prefix is only prepended when
+  # building ipconfig0 above.
+  ansible.builtin.set_fact:
+    forgejo_vm_ip: "{{ forgejo_ip_config.split(',')[0].split('/')[0] }}"
+  when: forgejo_ip_config != 'dhcp'
+
+- name: Resolve the DHCP-assigned IP via the QEMU guest agent
+  community.proxmox.proxmox_vm_info:
+    vmid: "{{ forgejo_vmid }}"
+    network: true
+  register: forgejo_vm_agent_info
+  until: >
+    forgejo_vm_agent_info.proxmox_vms | length > 0 and
+    forgejo_vm_agent_info.proxmox_vms[0].network is defined and
+    (forgejo_vm_agent_info.proxmox_vms[0].network
+      | selectattr('name', 'ne', 'lo')
+      | map(attribute='ip-addresses')
+      | flatten
+      | selectattr('ip-address-type', 'equalto', 'ipv4')
+      | list
+      | length) > 0
+  retries: 20
+  delay: 10
+  when: forgejo_ip_config == 'dhcp'
+
+- name: Extract the DHCP IP from the guest agent response
+  ansible.builtin.set_fact:
+    forgejo_vm_ip: >-
+      {{ (forgejo_vm_agent_info.proxmox_vms[0].network
+          | selectattr('name', 'ne', 'lo')
+          | map(attribute='ip-addresses')
+          | flatten
+          | selectattr('ip-address-type', 'equalto', 'ipv4')
+          | map(attribute='ip-address')
+          | first) }}
+  when: forgejo_ip_config == 'dhcp'
+
+- name: Fail if no IP address was resolved
+  ansible.builtin.fail:
+    msg: "Could not determine the VM's IP address — check its network config in Proxmox."
+  when: forgejo_vm_ip is not defined or forgejo_vm_ip == ""
+
+- name: Wait for SSH to become available
+  ansible.builtin.wait_for:
+    host: "{{ forgejo_vm_ip }}"
+    port: 22
+    delay: 5
+    timeout: 300
+    connect_timeout: 5
+
+- name: Confirm SSH actually works with the deploy user
+  ansible.builtin.command: >
+    ssh -i {{ ssh_private_key_path }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ forgejo_deploy_user }}@{{ forgejo_vm_ip }} "echo ok"
+  register: ssh_test
+  changed_when: false
+  retries: 5
+  delay: 10
+  until: ssh_test.rc == 0
+
+- name: Add the VM to the forgejo inventory group
+  ansible.builtin.add_host:
+    name: "{{ forgejo_vm_ip }}"
+    groups: forgejo
+    ansible_host: "{{ forgejo_vm_ip }}"
+    ansible_user: "{{ forgejo_deploy_user }}"
+    ansible_become: true
+    ansible_ssh_private_key_file: "{{ ssh_private_key_path }}"
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+- name: Cache VM facts for later plays
+  ansible.builtin.set_fact:
+    forgejo_vm_created: true
+    forgejo_vm_vmid: "{{ forgejo_vmid }}"
+    forgejo_vm_ip: "{{ forgejo_vm_ip }}"
+    cacheable: yes
+
+- name: VM creation complete
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      Forgejo VM created
+      ============================================
+      VMID: {{ forgejo_vmid }}
+      Hostname: {{ forgejo_hostname }}
+      IP: {{ forgejo_vm_ip }}
+      SSH: ssh -i {{ ssh_private_key_path }} {{ forgejo_deploy_user }}@{{ forgejo_vm_ip }}

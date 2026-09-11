@@ -1,0 +1,73 @@
+---
+# ============================================
+# Deploy Forgejo
+# ============================================
+#
+# Non-interactive by design — no vars_prompt/pause on this path. Fill in
+# every REPLACE_ME in inventory/group_vars/ and create the two vault.yaml
+# files (see Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md and Shared/Ansible/README.md)
+# before running this.
+#
+# This project does NOT build its own VM template — vm_template_name/
+# vm_template_vmid must already exist, built with
+# ../Shared/Ansible/create-template-linux.yaml (shared across every project in
+# this mono-repo, not Forgejo-specific). proxmox_preflight fails clearly
+# if it's missing.
+#
+# Usage:
+#   ansible-playbook deploy_forgejo.yaml
+#
+# ============================================
+
+- name: Preflight checks
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vars.yaml
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml
+    - inventory/group_vars/proxmox_pve1/vars.yaml
+    - inventory/group_vars/forgejo/vars.yaml
+    - inventory/group_vars/forgejo/vault.yaml
+  module_defaults:
+    group/community.proxmox.proxmox:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+      api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: false
+  roles:
+    - proxmox_preflight
+
+- name: Create the Forgejo VM
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vars.yaml
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml
+    - inventory/group_vars/proxmox_pve1/vars.yaml
+    - inventory/group_vars/forgejo/vars.yaml
+    - inventory/group_vars/forgejo/vault.yaml
+  module_defaults:
+    group/community.proxmox.proxmox:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+      api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: false
+  roles:
+    - create_forgejo_vm
+
+- name: Install and configure Forgejo
+  hosts: forgejo
+  gather_facts: true
+  vars:
+    # create_forgejo_vm cached these on localhost with cacheable: yes —
+    # pull them back in for use in this play (same pattern
+    # Proxmox-NextCloud uses across its own plays).
+    forgejo_vm_ip: "{{ hostvars['localhost']['forgejo_vm_ip'] }}"
+    forgejo_vm_vmid: "{{ hostvars['localhost']['forgejo_vm_vmid'] }}"
+  roles:
+    - forgejo_prereqs
+    - forgejo_database
+    - forgejo_install
+    - forgejo_verify

@@ -1,0 +1,34 @@
+---
+# ============================================
+# Backup Forgejo (on-demand)
+# ============================================
+#
+# Standalone wrapper for the forgejo_backup role — usable from cron/a
+# systemd timer, or run by hand. See the Disaster Recovery section of
+# README.md for why backup_storage_target must be off-node storage, and
+# for the simpler alternative (a native Proxmox Datacenter -> Backup job)
+# that needs no Ansible at all.
+#
+# Usage:
+#   ansible-playbook backup_forgejo.yaml -e forgejo_vm_vmid=<vmid>
+#
+# (VMID is shown at the end of deploy_forgejo.yaml's run, and is visible
+# in the Proxmox UI.)
+# ============================================
+
+- name: Backup the Forgejo VM
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vars.yaml
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml
+    - inventory/group_vars/proxmox_pve1/vars.yaml
+  module_defaults:
+    group/community.proxmox.proxmox:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+      api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: false
+  roles:
+    - forgejo_backup

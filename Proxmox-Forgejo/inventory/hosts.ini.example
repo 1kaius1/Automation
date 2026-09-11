@@ -1,0 +1,9 @@
+# Ansible Inventory for Forgejo Deployment
+# =========================================
+
+# Local machine — used for Proxmox API calls and orchestration
+[local]
+localhost ansible_connection=local
+
+# Forgejo VM — populated at runtime by the create_forgejo_vm role via add_host
+[forgejo]

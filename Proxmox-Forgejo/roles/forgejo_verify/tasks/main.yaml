@@ -1,0 +1,40 @@
+---
+# ============================================
+# Forgejo Verify
+# ============================================
+#
+# Local smoke test only — confirms Forgejo itself is healthy. Verifying
+# it through the shared reverse proxy/HTTPS is a separate manual step
+# once the upstream route is added there (outside this project's scope
+# — see README.md), so it's deliberately not checked here.
+# ============================================
+
+- name: Confirm the forgejo service is active
+  ansible.builtin.command: systemctl is-active forgejo
+  become: true
+  register: forgejo_service_status
+  changed_when: false
+  failed_when: forgejo_service_status.stdout != "active"
+
+- name: Curl the local healthz endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ forgejo_http_port }}{{ forgejo_healthz_path }}"
+    status_code: 200
+  register: forgejo_healthz
+  retries: 5
+  delay: 5
+  until: forgejo_healthz.status == 200
+
+- name: Verification passed
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      Forgejo is up and healthy on {{ forgejo_vm_ip }}:{{ forgejo_http_port }}
+      ============================================
+
+      Remaining manual steps (outside this project — see README.md):
+        1. Add an upstream route for {{ forgejo_domain }} -> {{ forgejo_vm_ip }}:{{ forgejo_http_port }}
+           in your shared reverse proxy.
+        2. Confirm https://{{ forgejo_domain }}{{ forgejo_healthz_path }} returns 200 once that's done.
+        3. Log in as {{ forgejo_admin_username }} and create a test repo.
+        4. Test git-over-SSH: git clone ssh://git@{{ forgejo_vm_ip }}:{{ forgejo_ssh_port }}/{{ forgejo_admin_username }}/<repo>.git

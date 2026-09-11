@@ -1,0 +1,129 @@
+---
+# ============================================
+# Forgejo Prerequisites
+# ============================================
+#
+# Base packages, the dedicated non-root service account, directory
+# layout, and firewall rules. Runs on the freshly-created VM (hosts:
+# forgejo — see deploy_forgejo.yaml).
+# ============================================
+
+- name: Update apt cache
+  # No cache_valid_time — this role runs once per VM's lifetime (at
+  # first configuration), so trusting a "recent enough" cache based on
+  # file mtimes from image build/cloud-init isn't worth the risk: it was
+  # observed skipping the real update on a brand-new VM, leaving even a
+  # base package like git unavailable to the very next task.
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - tzdata
+      - git
+      - ufw
+    state: present
+  become: true
+
+- name: Create the /opt/app application directory for the Forgejo binary
+  # /opt, /opt/app and /opt/data come from the shared two-disk template.
+  # This role owns everything Forgejo puts under them. /opt/data/forgejo
+  # (data dir + git user's home) is created with the user below and
+  # re-asserted in "Create Forgejo directories".
+  ansible.builtin.file:
+    path: "{{ forgejo_app_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Create the dedicated forgejo system group
+  ansible.builtin.group:
+    name: "{{ forgejo_system_user }}"
+    system: true
+  become: true
+
+- name: Create the dedicated forgejo system user (no login shell)
+  ansible.builtin.user:
+    name: "{{ forgejo_system_user }}"
+    group: "{{ forgejo_system_user }}"
+    home: "{{ forgejo_home_dir }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: true
+  become: true
+
+- name: Pre-create the forgejo user's Ansible remote_tmp directory
+  # forgejo_install later runs tasks with become_user: "{{ forgejo_system_user
+  # }}" (checking/creating the admin account). Without this existing
+  # beforehand, Ansible creates ~/.ansible/tmp on the fly and hands it off
+  # to the become_user — a known-fragile path across some sudo configs
+  # (hence its own warning: "this may cause issues when running as
+  # another user... create the remote_tmp dir with the correct
+  # permissions manually").
+  ansible.builtin.file:
+    path: "{{ forgejo_home_dir }}/.ansible/tmp"
+    state: directory
+    owner: "{{ forgejo_system_user }}"
+    group: "{{ forgejo_system_user }}"
+    mode: '0700'
+  become: true
+
+- name: Create Forgejo directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ forgejo_system_user }}"
+    group: "{{ forgejo_system_user }}"
+    mode: '0750'
+  loop:
+    - "{{ forgejo_config_dir }}"
+    - "{{ forgejo_data_dir }}"
+    - "{{ forgejo_repo_root }}"
+    - "{{ forgejo_log_dir }}"
+  become: true
+
+- name: Allow SSH (management access) through ufw
+  community.general.ufw:
+    rule: allow
+    port: '22'
+    proto: tcp
+  become: true
+
+- name: Restrict Forgejo's git-over-SSH port to the shared reverse proxy only
+  # Same as the HTTP port: the proxy is the only ingress. Clients reach
+  # git-SSH via the proxy's stream{} listener (forgejo_ssh_public_port),
+  # not this port directly.
+  community.general.ufw:
+    rule: allow
+    port: "{{ forgejo_ssh_port | string }}"
+    proto: tcp
+    src: "{{ reverse_proxy_source_cidr }}"
+  become: true
+
+- name: Restrict Forgejo's HTTP port to the shared reverse proxy only
+  community.general.ufw:
+    rule: allow
+    port: "{{ forgejo_http_port | string }}"
+    proto: tcp
+    src: "{{ reverse_proxy_source_cidr }}"
+  become: true
+
+- name: Set default deny incoming / allow outgoing
+  community.general.ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+  become: true
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled
+  become: true

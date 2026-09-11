@@ -1,0 +1,3 @@
+---
+# Nothing to override by default — every input this role needs comes from
+# inventory/group_vars (proxmox_pve1, forgejo) and Shared/Ansible.

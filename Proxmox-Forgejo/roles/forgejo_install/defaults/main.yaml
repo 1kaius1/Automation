@@ -1,0 +1,18 @@
+---
+forgejo_arch: amd64
+# The versioned binary + stable "forgejo" symlink live on the /opt app
+# disk. forgejo_app_dir is set in roles/forgejo_prereqs/defaults (that
+# role runs first); the default here keeps forgejo_install runnable on
+# its own via --tags.
+forgejo_install_dir: "{{ forgejo_app_dir | default('/opt/app/forgejo') }}"
+# forgejo_version may be given with or without a leading "v" (Codeberg
+# displays release tags as "v16.0.3", but asset filenames use the bare
+# number) — normalize once here so the URL is correct either way.
+forgejo_version_number: "{{ forgejo_version | regex_replace('^v', '') }}"
+forgejo_download_url: "https://codeberg.org/forgejo/forgejo/releases/download/v{{ forgejo_version_number }}/forgejo-{{ forgejo_version_number }}-linux-{{ forgejo_arch }}"
+forgejo_checksum_url: "{{ forgejo_download_url }}.sha256"
+forgejo_run_mode: prod
+# Port advertised in clone URLs / SSH_PORT. Defaults to the in-VM listen
+# port (forgejo_ssh_port); override in group_vars when a reverse-proxy
+# stream fronts git-SSH on a different port.
+forgejo_ssh_public_port: "{{ forgejo_ssh_port }}"

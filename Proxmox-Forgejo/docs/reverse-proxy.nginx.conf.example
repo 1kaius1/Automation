@@ -1,0 +1,122 @@
+# Forgejo reverse-proxy — worked nginx example
+# ============================================
+# This project does NOT manage a reverse proxy (see README.md "Reverse
+# proxy"). This file is a reference for the shared proxy that fronts
+# Forgejo: TLS + HTTP for the web UI/API, and a raw-TCP stream for
+# git-over-SSH. Copy the pieces into your proxy's config; every value in
+# CAPS or `example.com` is a placeholder.
+#
+# Matches the deploy:
+#   - Forgejo speaks plain HTTP on the VM      -> forgejo_http_port      (3000)
+#   - Forgejo's git-SSH server binds in the VM -> forgejo_ssh_port       (2222)
+#   - clients reach git-SSH on the proxy at    -> forgejo_ssh_public_port (10000)
+#   - app.ini: ROOT_URL = https://<server_name>/ , SSH_PORT = 10000
+#   - the VM's ufw allows :3000 and :2222 only from reverse_proxy_source_cidr,
+#     so this proxy's egress IP must fall in that CIDR.
+#
+# Why 10000 for git-SSH and not 22 or 2222: those are the first ports
+# credential-stuffing bots try. An nmap scan of this host still finds an
+# open port, but it keeps Forgejo's git-SSH out of the constant
+# background noise aimed at the well-known ones. Pick any high port you
+# like; keep forgejo_ssh_public_port, this `listen`, and app.ini's
+# SSH_PORT in sync.
+
+
+# ── http{} context ──────────────────────────────────────────────────────
+# Put this map once, in http{} (e.g. /etc/nginx/conf.d/00-upgrade-map.conf).
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+
+# ── http{} context ──────────────────────────────────────────────────────
+upstream forgejo_web {
+    server FORGEJO_VM_IP:3000;      # forgejo_http_port on the Forgejo VM
+    keepalive 32;
+}
+
+# Plain HTTP -> HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name git.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;                      # nginx < 1.25.1: use `listen 443 ssl http2;`
+
+    server_name git.example.com;   # == forgejo_domain and app.ini ROOT_URL host
+
+    ssl_certificate     /etc/nginx/ssl/git.example.com.crt.pem;
+    ssl_certificate_key /etc/nginx/ssl/git.example.com.key.pem;
+    # ssl_protocols TLSv1.2 TLSv1.3;   # if not set globally
+
+    access_log /var/log/nginx/forgejo.access.log;
+    error_log  /var/log/nginx/forgejo.error.log;
+
+    # git-over-HTTP pushes, LFS objects, attachment uploads. 512m is a
+    # sane cap; set 0 to disable the limit entirely.
+    client_max_body_size 512m;
+    # Stream the body to Forgejo instead of spooling a whole push to disk.
+    proxy_request_buffering off;
+
+    location / {
+        proxy_pass http://forgejo_web;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;     # -> https; stops redirect loops
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  $server_port;
+
+        # WebSocket / SSE (live notifications, some editor features)
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        proxy_redirect off;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout    300s;   # big clones / CI fetches exceed the 60s default
+        proxy_read_timeout    300s;
+    }
+}
+
+
+# ── stream{} context ────────────────────────────────────────────────────
+# TOP-LEVEL — a sibling of http{}, never inside it. Put it at the bottom
+# of /etc/nginx/nginx.conf, or in /etc/nginx/stream.d/forgejo-ssh.conf if
+# nginx.conf has `stream { include /etc/nginx/stream.d/*.conf; }`.
+# Needs the stream module: `nginx -V 2>&1 | tr ' ' '\n' | grep stream`
+# (Debian/Ubuntu ship it; may need `load_module modules/ngx_stream_module.so;`
+#  as the first line of nginx.conf).
+stream {
+    upstream forgejo_ssh {
+        server FORGEJO_VM_IP:2222;    # forgejo_ssh_port — Forgejo's git-SSH server in the VM
+    }
+
+    server {
+        listen 10000;                # forgejo_ssh_public_port — what git clients connect to
+        listen [::]:10000;
+        proxy_pass forgejo_ssh;
+
+        proxy_connect_timeout 10s;
+        proxy_timeout 1h;            # don't cut idle-but-alive git transfers
+
+        error_log /var/log/nginx/forgejo-ssh.error.log;
+
+        # proxy_protocol on;         # only if Forgejo's SSH server is set to
+                                     # expect PROXY protocol (it is NOT by default)
+    }
+}
+
+# Clone URL clients then get:
+#   ssh://git@git.example.com:10000/<owner>/<repo>.git
+# ~/.ssh/config shortcut:
+#   Host git.example.com
+#     Port 10000

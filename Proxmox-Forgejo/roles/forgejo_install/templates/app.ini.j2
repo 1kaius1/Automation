@@ -1,0 +1,59 @@
+; Managed by Ansible (roles/forgejo_install) — do not edit by hand, changes
+; will be overwritten on the next deploy. Edit inventory/group_vars/forgejo
+; instead.
+
+APP_NAME = Forgejo
+RUN_USER = {{ forgejo_system_user }}
+RUN_MODE = {{ forgejo_run_mode }}
+WORK_PATH = {{ forgejo_data_dir }}
+
+[server]
+DOMAIN           = {{ forgejo_domain }}
+; ROOT_URL is the externally-facing address — TLS terminates at the
+; shared reverse proxy in front of this VM, not here. See README.md.
+ROOT_URL         = https://{{ forgejo_domain }}/
+HTTP_ADDR        = 0.0.0.0
+HTTP_PORT        = {{ forgejo_http_port }}
+START_SSH_SERVER = true
+SSH_DOMAIN       = {{ forgejo_domain }}
+; SSH_PORT is what clients use (in clone URLs); SSH_LISTEN_PORT is what
+; Forgejo binds inside the VM. They differ when a reverse-proxy stream
+; forwards <public port> -> <listen port>.
+SSH_PORT         = {{ forgejo_ssh_public_port }}
+SSH_LISTEN_PORT  = {{ forgejo_ssh_port }}
+DISABLE_SSH      = false
+LFS_START_SERVER = true
+LFS_JWT_SECRET   = {{ forgejo_lfs_jwt_secret }}
+
+[database]
+DB_TYPE  = postgres
+HOST     = 127.0.0.1:5432
+NAME     = {{ forgejo_db_name }}
+USER     = {{ forgejo_db_user }}
+PASSWD   = {{ forgejo_db_password }}
+SSL_MODE = disable
+
+[repository]
+ROOT = {{ forgejo_repo_root }}
+
+[security]
+INSTALL_LOCK   = true
+SECRET_KEY     = {{ forgejo_secret_key }}
+INTERNAL_TOKEN = {{ forgejo_internal_token }}
+
+[oauth2]
+JWT_SECRET = {{ forgejo_jwt_secret }}
+
+[service]
+DISABLE_REGISTRATION              = true
+REQUIRE_SIGNIN_VIEW                = false
+DEFAULT_KEEP_EMAIL_PRIVATE         = true
+DEFAULT_ALLOW_CREATE_ORGANIZATION  = true
+
+[mailer]
+ENABLED = false
+
+[log]
+MODE      = console
+LEVEL     = Info
+ROOT_PATH = {{ forgejo_log_dir }}

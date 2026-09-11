@@ -1,0 +1,46 @@
+---
+# Per-node Proxmox settings. Onboarding a second node/site later means
+# copying this directory to inventory/group_vars/proxmox_pve2/ (etc.) with
+# that node's own values, and adding a matching [proxmox_pve2] group to
+# inventory/hosts.ini — the API credential itself does NOT change, it's
+# shared cluster-wide from Shared/Ansible/ (see README.md).
+#
+# EDIT EVERY "REPLACE_ME" VALUE BELOW BEFORE FIRST RUN.
+
+# Which cluster node guests created by this project land on.
+proxmox_node: "REPLACE_ME_NODE_NAME"
+
+# Storage pool for VM disks (e.g. "local-lvm", "local-zfs", a Ceph pool name).
+storage_pool: "REPLACE_ME_STORAGE_POOL"
+
+# Network bridge to attach guest NICs to. The shared template is built on
+# the build VLAN, so create_forgejo_vm re-points the clone's net0 at this
+# bridge — set it to the bridge this project's VM must actually live on.
+network_bridge: "vmbr0"
+
+# Optional 802.1Q VLAN tag for the VM's NIC. Leave "" when network_bridge
+# is a plain per-VLAN bridge on a tagged uplink; set the tag (e.g. 101)
+# when network_bridge is a VLAN-aware bridge.
+network_vlan_tag: ""
+
+# Name and VMID of the reusable cloud-init template that create_forgejo_vm
+# clones from. This project does NOT build its own template — build one
+# with ../Shared/Ansible/create-template-linux.yaml (shared across every
+# project in this mono-repo). The name -> VMID mapping is defined once in
+# ../Shared/Ansible/template_manifest.yaml (templates are allocated VMIDs
+# from 90000 up, clear of the 100-up range Proxmox hands to real guests);
+# copy a row's name and vmid here verbatim.
+vm_template_name: "T-Debian-13-Cloud"
+vm_template_vmid: 90001
+
+# Off-node Proxmox storage ID (Proxmox Backup Server, or an NFS/CIFS share
+# added as Proxmox storage) that backups get sent to. This MUST be storage
+# that survives this node's hardware failing — see the Disaster Recovery
+# section of README.md.
+#
+# Set to "none" to explicitly defer this — proxmox_preflight turns it into
+# a loud warning instead of blocking the deploy. This does NOT give you
+# working disaster recovery; it's a deliberate, visible way to test the
+# rest of the deploy before off-node storage exists. Replace it with a
+# real storage ID before relying on this for anything.
+backup_storage_target: "REPLACE_ME_OFF_NODE_BACKUP_STORAGE_ID"
