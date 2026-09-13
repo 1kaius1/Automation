@@ -11,3 +11,5 @@ config.yaml
 # inventory/hosts.ini at every level of the tree.
 hosts.ini
 
+# Things are aren't yet for the eyes of GitHub
+Proxmox-AlphaCharlie/
