@@ -9,7 +9,7 @@
 #
 # It handles:
 # - Checking prerequisites
-# - Optionally creating Proxmox API user
+# - Verifying the shared Proxmox credential (../Shared/Ansible/)
 # - Running the deployment
 # - Providing helpful error messages
 #
@@ -200,60 +200,29 @@ setup_ssh_keys() {
 }
 
 # ============================================
-# API User Setup
+# Shared Proxmox credential check
 # ============================================
 
-setup_api_user() {
-    # Ask user if they need to create an API user
-    # If yes, run the setup_proxmox_api.yaml playbook
-    
-    print_header "Proxmox API User Setup"
-    
-    # Check if credentials file already exists from previous run
-    if [[ -f ".proxmox_credentials.yaml" ]]; then
-        print_info "Found existing Proxmox API credentials from previous setup"
-        echo ""
-        read -p "Do you want to use these credentials? (yes/no) [yes]: " use_existing
-        use_existing=${use_existing:-yes}
-        
-        if [[ "$use_existing" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            print_success "Using existing API credentials"
-            echo ""
-            return 0
-        else
-            print_warning "Will create new API credentials (old file will be overwritten)"
-            echo ""
-        fi
-    fi
-    
-    # Ask if user needs to create API user
-    echo "Do you already have Proxmox API credentials?"
-    echo "  - If YES: You have a Token ID and Token Secret ready"
-    echo "  - If NO: We'll create them for you now"
-    echo ""
-    read -p "Do you need to create a new Proxmox API user? (yes/no) [no]: " create_user
-    create_user=${create_user:-no}
-    
-    if [[ "$create_user" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-        print_info "Running API user creation playbook..."
-        echo ""
-        
-        # Run the API user setup playbook
-        if ansible-playbook setup_proxmox_api.yaml; then
-            print_success "API user created successfully"
-            echo ""
-            return 0
-        else
-            print_error "API user creation failed"
-            echo "  Please check the error messages above and try again"
-            return 1
-        fi
-    else
-        print_info "Skipping API user creation"
-        echo "  You'll be prompted for your existing API credentials during deployment"
+check_shared_credential() {
+    # This project uses the shared svc_ansible@pve credential, provisioned
+    # once per cluster by ../Shared/Ansible/create-pve_svc_user.yaml. It
+    # is NOT created here.
+
+    print_header "Shared Proxmox Credential"
+
+    local shared_vault="../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml"
+    if [[ -f "$shared_vault" ]]; then
+        print_success "Found shared credential ($shared_vault)"
         echo ""
         return 0
     fi
+
+    print_error "Shared Proxmox credential not found."
+    echo "  Provision it once per cluster:"
+    echo "    cd ../Shared/Ansible && ansible-playbook create-pve_svc_user.yaml"
+    echo "  See ../Shared/Ansible/README.md."
+    echo ""
+    return 1
 }
 
 # ============================================
@@ -290,68 +259,6 @@ run_deployment() {
         echo ""
         return 1
     fi
-}
-
-# ============================================
-# Cleanup
-# ============================================
-
-offer_cleanup() {
-    # Ask user if they want to delete the saved credentials file
-    # This is a security best practice
-    
-    if [[ ! -f ".proxmox_credentials.yaml" ]]; then
-        return 0
-    fi
-    
-    echo ""
-    print_header "Security Cleanup"
-    
-    echo "The file '.proxmox_credentials.yaml' contains sensitive API credentials."
-    echo "For security, you may want to delete it now that deployment is complete."
-    echo ""
-    echo "Options:"
-    echo "  1. Delete it now (recommended for one-time deployments)"
-    echo "  2. Keep it (useful if you plan to run more deployments)"
-    echo "  3. Move it to a secure location"
-    echo ""
-    read -p "What would you like to do? (1/2/3) [1]: " cleanup_choice
-    cleanup_choice=${cleanup_choice:-1}
-    
-    case "$cleanup_choice" in
-        1)
-            print_info "Securely deleting credentials file..."
-            # Use shred if available for secure deletion
-            if command -v shred &> /dev/null; then
-                shred -u .proxmox_credentials.yaml
-                print_success "Credentials file securely deleted"
-            else
-                rm .proxmox_credentials.yaml
-                print_success "Credentials file deleted"
-            fi
-            ;;
-        2)
-            print_warning "Keeping credentials file"
-            echo "  Remember to protect this file and delete it when no longer needed"
-            echo "  Ensure file permissions are restrictive: chmod 600 .proxmox_credentials.yaml"
-            chmod 600 .proxmox_credentials.yaml 2>/dev/null || true
-            ;;
-        3)
-            read -p "Enter path to move credentials to: " move_path
-            if [[ -n "$move_path" ]]; then
-                mv .proxmox_credentials.yaml "$move_path"
-                chmod 600 "$move_path" 2>/dev/null || true
-                print_success "Credentials moved to: $move_path"
-                echo "  File permissions set to 600 (owner read/write only)"
-            else
-                print_warning "No path provided, keeping file in current location"
-            fi
-            ;;
-        *)
-            print_warning "Invalid choice, keeping credentials file"
-            ;;
-    esac
-    echo ""
 }
 
 # ============================================
@@ -394,7 +301,7 @@ main() {
     echo "The process includes:"
     echo "  1. Checking prerequisites (Ansible, SSH, etc.)"
     echo "  2. Setting up SSH keys for container access"
-    echo "  3. Optionally creating Proxmox API user"
+    echo "  3. Verifying the shared Proxmox credential is present"
     echo "  4. Deploying NextCloud and Collabora containers"
     echo ""
     
@@ -414,21 +321,18 @@ main() {
         exit 1
     fi
     
-    # Step 3: Setup API user (optional)
-    if ! setup_api_user; then
-        print_error "API user setup failed"
+    # Step 3: Verify the shared Proxmox credential
+    if ! check_shared_credential; then
+        print_error "Shared Proxmox credential missing"
         exit 1
     fi
-    
+
     # Step 4: Run deployment
     if ! run_deployment; then
         print_error "Deployment failed"
         exit 1
     fi
-    
-    # Step 5: Offer cleanup
-    offer_cleanup
-    
+
     # Final success message
     print_header "Deployment Complete!"
     

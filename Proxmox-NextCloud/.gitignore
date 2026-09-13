@@ -1,6 +1,9 @@
-# Don't commit sensitive stuff!
-.proxmox_credentials.yaml
+# Don't commit sensitive or site-specific stuff!
 config.yaml
 ssh_keys/*
-token
 
+# Personal vault-id label/filename — only the .example is committed.
+ansible.cfg
+
+# A vault file ever decrypted in place by mistake.
+*.vault.yaml.decrypted

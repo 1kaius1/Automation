@@ -23,12 +23,12 @@
 # ========================================
 # Proxmox Connection
 # ========================================
-# Connection details for your Proxmox server
+# The API credential (host, token id, token secret) is NOT set here — it
+# comes from the shared, cluster-wide svc_ansible@pve credential in
+# ../Shared/Ansible/group_vars/proxmox_cluster/ (provisioned by
+# ../Shared/Ansible/create-pve_svc_user.yaml). Only pick the node:
 
-proxmox_api_host: "192.168.1.100"           # Proxmox server IP or hostname (no https://)
-proxmox_node: "pve"                          # Proxmox node name (usually 'pve')
-proxmox_api_token_id: "ansible@pve!automation-token"  # Full API token ID (user@realm!tokenname)
-proxmox_api_token_secret: "12345678-1234-1234-1234-123456789abc"  # Token secret UUID
+proxmox_node: "pve"                          # Which cluster node the containers land on
 
 # ========================================
 # Storage Configuration

@@ -31,6 +31,13 @@ fact_caching = jsonfile
 fact_caching_connection = /tmp/ansible_facts
 fact_caching_timeout = 3600
 
+# Vault password file. Needed to decrypt the shared Proxmox credential at
+# ../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml. Keep the label
+# and filename in sync with ../Shared/Ansible/ansible.cfg — both decrypt
+# the one shared credential. This file is gitignored (public repo); copy
+# ansible.cfg.example to get started and rename the label if you want.
+vault_identity_list = homelab@~/.ansible/vault_pass_homelab.txt
+
 [ssh_connection]
 # Use SSH pipelining for better performance (fewer SSH operations)
 pipelining = True

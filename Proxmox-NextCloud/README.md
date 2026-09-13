@@ -16,11 +16,12 @@ Automated deployment of NextCloud and Collabora Office on Proxmox LXC containers
 
 ## Overview
 
-This project provides a complete, production-ready automation for deploying NextCloud with integrated Collabora Office on Proxmox VE. The deployment is split into modular playbooks that handle different aspects of the setup:
+This project deploys NextCloud with integrated Collabora Office on Proxmox VE LXC containers:
 
-1. **API User Setup** (`setup_proxmox_api.yaml`) - Creates a dedicated Proxmox API user with minimal required permissions
-2. **NextCloud Deployment** (`deploy_nextcloud.yaml`) - Deploys and configures NextCloud and Collabora containers
-3. **Wrapper Script** (`Deploy.sh`) - Orchestrates the entire process with helpful prompts and validation
+1. **NextCloud Deployment** (`deploy_nextcloud.yaml`) - Deploys and configures NextCloud and Collabora containers
+2. **Wrapper Script** (`Deploy.sh`) - Orchestrates the process with prompts and validation
+
+The Proxmox API credential is **not** created here. Every Proxmox-facing project in this mono-repo shares one cluster-wide `svc_ansible@pve` account, provisioned once by [`../Shared/Ansible/create-pve_svc_user.yaml`](../Shared/Ansible/README.md). This project reads it from `../Shared/Ansible/group_vars/proxmox_cluster/` and does not manage its own.
 
 ## Features
 
@@ -61,10 +62,14 @@ This project provides a complete, production-ready automation for deploying Next
 ### Proxmox Requirements
 
 - Proxmox VE 7.0 or later
-- Root SSH access to Proxmox host
-- LXC template downloaded (e.g., Debian 12)
+- The shared `svc_ansible@pve` credential provisioned once per cluster —
+  `cd ../Shared/Ansible && ansible-playbook create-pve_svc_user.yaml`
+  (see [`../Shared/Ansible/README.md`](../Shared/Ansible/README.md))
+- A vault password file in place so `ansible.cfg`'s `vault_identity_list`
+  can decrypt that credential's `vault.yaml`
+- LXC template downloaded (e.g., Debian 13)
 - Available storage pool (LVM-Thin recommended)
-- Network bridge configured (typically `vmbr0`)
+- Network bridge configured
 
 ### Network Requirements
 
@@ -89,9 +94,8 @@ cd /path/to/nextcloud-proxmox
 The script will:
 1. Check prerequisites (Ansible, SSH, collections)
 2. Generate SSH keys if needed
-3. Ask if you need to create a Proxmox API user
-4. Run the appropriate playbooks
-5. Offer to clean up sensitive files
+3. Verify the shared Proxmox credential is present
+4. Run the deployment playbook
 
 ### Option 2: Manual Step-by-Step
 
@@ -105,51 +109,30 @@ ansible-galaxy collection install -r requirements.yaml
 mkdir -p ssh_keys
 ssh-keygen -t ed25519 -f ssh_keys/id_ed25519 -N ""
 
-# 3. (Optional) Create Proxmox API user
-ansible-playbook setup_proxmox_api.yaml
+# 3. One-time per cluster: provision the shared svc_ansible@pve credential
+cd ../Shared/Ansible && ansible-playbook create-pve_svc_user.yaml && cd -
 
-# 4. Deploy NextCloud and Collabora
+# 4. One-time: point ansible.cfg at your vault password file
+cp ansible.cfg.example ansible.cfg   # then set vault_identity_list
+
+# 5. Deploy NextCloud and Collabora
 ansible-playbook deploy_nextcloud.yaml
-
-# 5. (Optional) Clean up saved credentials
-shred -u .proxmox_credentials.yaml
 ```
 
 ## Detailed Usage
 
-### Playbook 1: API User Setup
+### Prerequisite: the shared Proxmox credential
 
-**File**: `setup_proxmox_api.yaml`
+This project does **not** create a Proxmox API user. It uses the one
+cluster-wide `svc_ansible@pve` account shared by every Proxmox project in
+this mono-repo, provisioned once by
+[`../Shared/Ansible/create-pve_svc_user.yaml`](../Shared/Ansible/README.md)
+(role + user + token, written Vault-encrypted to
+`../Shared/Ansible/group_vars/proxmox_cluster/`). `deploy_nextcloud.yaml`
+loads `vars.yaml` + `vault.yaml` from there via `vars_files:` and fails
+fast with a pointer if they're missing or the vault can't be decrypted.
 
-**Purpose**: Creates a dedicated Proxmox API user with minimal required permissions.
-
-**When to use**:
-- First-time setup
-- You don't have existing Proxmox API credentials
-- You want a dedicated user for Ansible automation
-
-**What it does**:
-1. Connects to Proxmox via SSH
-2. Creates a custom role with specific permissions (defined in `proxmox_permissions.yaml`)
-3. Creates an API user (default: `ansible@pve`)
-4. Generates an API token
-5. Saves credentials to `.proxmox_credentials.yaml`
-
-**Usage**:
-```bash
-ansible-playbook setup_proxmox_api.yaml
-```
-
-**Prompts**:
-- Proxmox SSH connection details
-- API user configuration
-- Authentication method (password or SSH key)
-
-**Output**:
-- API Token ID and Secret (displayed on screen)
-- `.proxmox_credentials.yaml` (saved locally for next step)
-
-### Playbook 2: NextCloud Deployment
+### Playbook: NextCloud Deployment
 
 **File**: `deploy_nextcloud.yaml`
 
@@ -188,28 +171,33 @@ ansible-playbook deploy_nextcloud.yaml
 
 ```
 .
-├── Deploy.sh                      # Wrapper script (orchestrates deployment)
-├── setup_proxmox_api.yaml          # Playbook: API user creation
+├── Deploy.sh                       # Wrapper script (orchestrates deployment)
 ├── deploy_nextcloud.yaml           # Playbook: NextCloud deployment
-├── proxmox_permissions.yaml        # Configuration: API user permissions
+├── config.yaml.example             # Deployment settings (copy to config.yaml)
+├── ansible.cfg.example             # Copy to ansible.cfg; set vault_identity_list
 ├── requirements.yaml               # Ansible collection requirements
-├── README.md                      # This file
-├── ssh_keys/                      # SSH keys for container access (generated)
+├── README.md                       # This file
+├── ssh_keys/                       # SSH keys for container access (generated)
 │   ├── id_ed25519
 │   └── id_ed25519.pub
-└── roles/                         # Ansible roles
-    ├── proxmox_setup/             # Role: Create API user
+└── roles/
     ├── create_nextcloud_container/ # Role: Create NextCloud LXC
     ├── create_collabora_container/ # Role: Create Collabora LXC
-    ├── configure_nextcloud/       # Role: Install/configure NextCloud
-    └── configure_collabora/       # Role: Install/configure Collabora
+    ├── configure_nextcloud/        # Role: Install/configure NextCloud
+    └── configure_collabora/        # Role: Install/configure Collabora
 ```
+
+The shared Proxmox credential lives in `../Shared/Ansible/` — see that project's README.
 
 ## Configuration
 
-### Customizing API User Permissions
+### Proxmox API permissions
 
-Edit `proxmox_permissions.yaml` to modify the permissions granted to the API user:
+The shared `svc_ansible@pve` role's privilege list is
+`../Shared/Ansible/proxmox_permissions.yaml` (it covers both VM and LXC
+provisioning). Edit it there and re-run
+`../Shared/Ansible/create-pve_svc_user.yaml` to change what the account
+may do cluster-wide. For reference, it grants:
 
 ```yaml
 proxmox_api_role_name: "Ansible_Automation"
@@ -319,41 +307,33 @@ curl -k -H "Authorization: PVEAPIToken=<TOKEN_ID>=<TOKEN_SECRET>" \
 
 ## Security Considerations
 
-### API User Permissions
+### Proxmox API access
 
-The API user created by `setup_proxmox_api.yaml` has **minimal required permissions**:
-
-- Can create and manage LXC containers
-- Can allocate storage
-- **Cannot** access console
-- **Cannot** manage other users
-- **Cannot** modify Proxmox system settings
-
-See `proxmox_permissions.yaml` for the complete permission list.
+This project uses the shared, cluster-wide `svc_ansible@pve` token (see
+`../Shared/Ansible/`). Its least-privilege role can create and manage
+guests and allocate storage, but **cannot** open a guest console, manage
+users/roles/ACLs, or change host system settings. The token secret is
+stored only Ansible Vault-encrypted, in
+`../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml`.
 
 ### Credential Management
 
 **Best Practices**:
 
-1. **Delete credential files after use**:
-   ```bash
-   shred -u .proxmox_credentials.yaml
-   ```
+1. **Keep the shared token in Vault** — never in `config.yaml` or on a
+   command line. `create-pve_svc_user.yaml` writes it encrypted;
+   `-e rotate_api_token=true` rotates it.
 
 2. **Protect private SSH keys**:
    ```bash
    chmod 600 ssh_keys/id_ed25519
    ```
 
-3. **Use strong passwords** for:
-   - Container root access
-   - Database passwords
-   - NextCloud admin account
+3. **Use strong passwords** for container root, the database, and the
+   NextCloud admin account (these live in the gitignored `config.yaml`).
 
-4. **Store credentials securely**:
-   - Use a password manager
-   - Don't commit credentials to git
-   - Consider using Ansible Vault for sensitive data
+4. **Store the rest securely** — a password manager for `config.yaml`
+   values; never commit `config.yaml` or `ansible.cfg`.
 
 ### Production Deployment
 
