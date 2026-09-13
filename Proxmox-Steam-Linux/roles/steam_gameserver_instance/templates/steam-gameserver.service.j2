@@ -1,0 +1,18 @@
+[Unit]
+Description=Steam game server: {{ steam_gameserver_instance_name }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ steam_system_user }}
+WorkingDirectory={{ steam_gameserver_instance_install_dir }}
+{% for env_name, env_value in steam_gameserver_instance_env.items() %}
+Environment={{ env_name }}={{ env_value }}
+{% endfor %}
+ExecStart={{ steam_gameserver_instance_install_dir }}/{{ steam_gameserver_instance_launch_binary }} {{ steam_gameserver_instance_launch_args | join(' ') }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

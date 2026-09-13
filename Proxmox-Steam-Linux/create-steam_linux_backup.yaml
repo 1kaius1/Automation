@@ -1,0 +1,33 @@
+---
+# ============================================
+# On-demand backup of the Steam-Linux VM
+# ============================================
+#
+# Mirrors Proxmox-Forgejo's backup_forgejo.yaml. Simpler default:
+# register steam_vm_vmid in Proxmox's own Datacenter -> Backup scheduled
+# job instead — no Ansible required for that path at all.
+#
+# Backs up the VM as a whole (base host + every game-server instance under
+# /opt/data/steam/) — there's no per-instance backup here.
+#
+# Usage:
+#   ansible-playbook create-steam_linux_backup.yaml -e steam_vm_vmid=<vmid>
+# ============================================
+
+- name: Backup the Steam-Linux VM
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vars.yaml
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml
+    - ../Shared/Ansible/group_vars/proxmox_pve1/vars.yaml
+    - inventory/group_vars/steam_linux/vars.yaml
+  module_defaults:
+    group/community.proxmox.proxmox:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+      api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: false
+  roles:
+    - steam_backup

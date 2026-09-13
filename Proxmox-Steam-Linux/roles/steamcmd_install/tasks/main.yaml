@@ -1,0 +1,60 @@
+---
+# ============================================
+# SteamCMD Install
+# ============================================
+#
+# Valve does not publish a stable checksum for steamcmd_linux.tar.gz
+# (unlike, say, Proxmox-Forgejo's GitHub-release .sha256 sidecars), so
+# this download is verified by HTTPS transport security only. That's a
+# real, accepted limitation, not an oversight — do not add a fabricated
+# checksum here.
+# ============================================
+
+- name: Check whether steamcmd is already installed
+  ansible.builtin.stat:
+    path: "{{ steamcmd_install_dir }}/steamcmd.sh"
+  register: steamcmd_stat
+
+- name: Create the steamcmd install directory
+  # unarchive requires dest to already exist as a directory — it will not
+  # create it. Owned by the steam user (not root:root): steamcmd.sh
+  # self-updates in place (see below, run as become_user: steam), so it
+  # needs write access to its own install directory.
+  ansible.builtin.file:
+    path: "{{ steamcmd_install_dir }}"
+    state: directory
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0755'
+  become: true
+  when: not steamcmd_stat.stat.exists
+
+- name: Download steamcmd
+  ansible.builtin.get_url:
+    url: "{{ steamcmd_download_url }}"
+    dest: /tmp/steamcmd_linux.tar.gz
+    mode: '0644'
+  when: not steamcmd_stat.stat.exists
+
+- name: Extract steamcmd
+  ansible.builtin.unarchive:
+    src: /tmp/steamcmd_linux.tar.gz
+    dest: "{{ steamcmd_install_dir }}"
+    remote_src: true
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+  become: true
+  when: not steamcmd_stat.stat.exists
+
+- name: Self-update steamcmd
+  # SteamCMD writes its own state under the invoking user's home, so this
+  # (and every later app_update in steam_gameserver_instance) runs as the
+  # steam user from the start, avoiding a permissions mismatch later.
+  # changed_when: false — SteamCMD's own update state isn't something
+  # Ansible can detect changed/unchanged without fragile stdout string
+  # matching, so this deliberately doesn't claim an idempotency check it
+  # can't actually verify.
+  ansible.builtin.command: "{{ steamcmd_install_dir }}/steamcmd.sh +quit"
+  become: true
+  become_user: "{{ steam_system_user }}"
+  changed_when: false

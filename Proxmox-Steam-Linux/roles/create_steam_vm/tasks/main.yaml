@@ -1,0 +1,243 @@
+---
+# ============================================
+# Create Steam-Linux VM (clone from the cloud-init template)
+# ============================================
+#
+# Clones vm_template_name via the API (community.proxmox.proxmox_kvm),
+# applies cloud-init settings, resizes BOTH disks, starts it, resolves its
+# IP (static or via the QEMU guest agent for DHCP), waits for SSH,
+# add_hosts it into the [steam_linux] group for the next play in THIS run,
+# AND persists it into the project's static inventory (host_vars +
+# hosts.ini) — create-steam_gameserver.yaml is a SEPARATE ansible-playbook
+# invocation, run later, with no access to this run's cached facts or
+# add_host, so it needs a real, durable inventory entry to target. Auth is
+# inherited from the play's module_defaults — see create-steam_linux.yaml.
+# ============================================
+
+- name: Get next available VMID from the API
+  ansible.builtin.uri:
+    url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/nextid"
+    method: GET
+    headers:
+      Authorization: "PVEAPIToken={{ proxmox_api_token_id }}={{ proxmox_api_token_secret }}"
+    validate_certs: no
+  register: next_vmid_response
+
+- name: Set the new VM's vmid
+  ansible.builtin.set_fact:
+    steam_vmid: "{{ next_vmid_response.json.data | int }}"
+
+- name: Sanity-check the assigned vmid
+  ansible.builtin.fail:
+    msg: "Unexpected vmid {{ steam_vmid }} from the API (< {{ steam_vmid_min }})."
+  when: steam_vmid | int < steam_vmid_min
+
+- name: Verify the SSH public key exists
+  ansible.builtin.stat:
+    path: "{{ ssh_public_key_path }}"
+  register: ssh_key_stat
+
+- name: Fail if the SSH public key is missing
+  ansible.builtin.fail:
+    msg: |
+      SSH public key not found at {{ ssh_public_key_path }}.
+      Run Deploy.sh (which generates one) or ssh-keygen manually before
+      running this playbook directly.
+  when: not ssh_key_stat.stat.exists
+
+- name: Read the SSH public key
+  ansible.builtin.slurp:
+    path: "{{ ssh_public_key_path }}"
+  register: ssh_public_key_content
+
+- name: Clone the cloud-init template
+  community.proxmox.proxmox_kvm:
+    node: "{{ proxmox_node }}"
+    clone: "{{ vm_template_name }}"
+    vmid: "{{ vm_template_vmid }}"
+    newid: "{{ steam_vmid }}"
+    name: "{{ steam_linux_hostname }}"
+    storage: "{{ storage_pool }}"
+    format: raw
+    full: true
+    timeout: 300
+
+- name: Apply cloud-init settings, network and sizing to the clone
+  # The template is built on the shared build VLAN, so its net0 points at
+  # that bridge — every consuming project MUST re-point net0 at its own
+  # bridge here (changing net requires update_unsafe). nameservers is
+  # required with a static steam_ip_config; ciupgrade is disabled because
+  # steam_prereqs runs its own apt update + install.
+  community.proxmox.proxmox_kvm:
+    node: "{{ proxmox_node }}"
+    vmid: "{{ steam_vmid }}"
+    update: true
+    update_unsafe: true
+    cores: "{{ steam_cores }}"
+    memory: "{{ steam_memory }}"
+    ciuser: "{{ steam_deploy_user }}"
+    ciupgrade: false
+    sshkeys: "{{ ssh_public_key_content.content | b64decode | trim }}"
+    net:
+      net0: "virtio,bridge={{ network_bridge }}{{ (',tag=' ~ (network_vlan_tag | string)) if (network_vlan_tag | default('') | string | length > 0) else '' }}"
+    nameservers: "{{ steam_nameservers | default(omit, true) }}"
+    searchdomains: "{{ steam_searchdomains | default(omit, true) }}"
+    ipconfig:
+      ipconfig0: "{{ 'ip=dhcp' if steam_ip_config == 'dhcp' else 'ip=' + steam_ip_config }}"
+
+- name: Resize the OS disk (scsi0) to steam_disk_size
+  # A bare number is NOT interpreted as GiB here — the underlying Proxmox
+  # resize API needs an explicit unit suffix, or it treats the value as a
+  # tiny absolute size and fails with "shrinking disks is not supported".
+  community.proxmox.proxmox_disk:
+    vmid: "{{ steam_vmid }}"
+    disk: scsi0
+    state: resized
+    size: "{{ steam_disk_size }}G"
+
+- name: Resize the /opt data disk (scsi1) to steam_opt_disk_size
+  # Unlike Proxmox-Forgejo (one app, fits the template's 16G default),
+  # this host hosts multiple future game-server installs under
+  # /opt/data/steam/<instance>/, so scsi1 gets resized too. Same G-suffix
+  # requirement as scsi0 above.
+  community.proxmox.proxmox_disk:
+    vmid: "{{ steam_vmid }}"
+    disk: scsi1
+    state: resized
+    size: "{{ steam_opt_disk_size }}G"
+
+- name: Start the VM
+  community.proxmox.proxmox_kvm:
+    node: "{{ proxmox_node }}"
+    vmid: "{{ steam_vmid }}"
+    state: started
+
+- name: Wait for cloud-init to have a chance to run
+  ansible.builtin.pause:
+    seconds: "{{ ssh_boot_wait_seconds }}"
+    prompt: "Waiting for the VM to boot and cloud-init to configure networking/SSH..."
+
+- name: Use the static IP directly, if configured
+  ansible.builtin.set_fact:
+    steam_vm_ip: "{{ steam_ip_config.split(',')[0].split('/')[0] }}"
+  when: steam_ip_config != 'dhcp'
+
+- name: Resolve the DHCP-assigned IP via the QEMU guest agent
+  community.proxmox.proxmox_vm_info:
+    vmid: "{{ steam_vmid }}"
+    network: true
+  register: steam_vm_agent_info
+  until: >
+    steam_vm_agent_info.proxmox_vms | length > 0 and
+    steam_vm_agent_info.proxmox_vms[0].network is defined and
+    (steam_vm_agent_info.proxmox_vms[0].network
+      | selectattr('name', 'ne', 'lo')
+      | map(attribute='ip-addresses')
+      | flatten
+      | selectattr('ip-address-type', 'equalto', 'ipv4')
+      | list
+      | length) > 0
+  retries: 20
+  delay: 10
+  when: steam_ip_config == 'dhcp'
+
+- name: Extract the DHCP IP from the guest agent response
+  ansible.builtin.set_fact:
+    steam_vm_ip: >-
+      {{ (steam_vm_agent_info.proxmox_vms[0].network
+          | selectattr('name', 'ne', 'lo')
+          | map(attribute='ip-addresses')
+          | flatten
+          | selectattr('ip-address-type', 'equalto', 'ipv4')
+          | map(attribute='ip-address')
+          | first) }}
+  when: steam_ip_config == 'dhcp'
+
+- name: Fail if no IP address was resolved
+  ansible.builtin.fail:
+    msg: "Could not determine the VM's IP address — check its network config in Proxmox."
+  when: steam_vm_ip is not defined or steam_vm_ip == ""
+
+- name: Wait for SSH to become available
+  ansible.builtin.wait_for:
+    host: "{{ steam_vm_ip }}"
+    port: 22
+    delay: 5
+    timeout: 300
+    connect_timeout: 5
+
+- name: Confirm SSH actually works with the deploy user
+  ansible.builtin.command: >
+    ssh -i {{ ssh_private_key_path }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ steam_deploy_user }}@{{ steam_vm_ip }} "echo ok"
+  register: ssh_test
+  changed_when: false
+  retries: 5
+  delay: 10
+  until: ssh_test.rc == 0
+
+- name: Add the VM to a run-scoped inventory group (NOT steam_linux)
+  # Deliberately a distinct group name from the static [steam_linux] group
+  # that this run also persists into below. On any run AFTER the first,
+  # hosts.ini already lists this VM under [steam_linux] (from a prior
+  # run's persistence step) by the time ansible-playbook parses inventory
+  # at startup — if play 3 targeted hosts: steam_linux, it would hit BOTH
+  # that pre-existing static entry AND this run's dynamic add_host for the
+  # very same physical machine under two different inventory_hostnames,
+  # and Ansible runs them in parallel by default. That raced two
+  # concurrent `useradd steam` calls against the same box in practice
+  # (steam_prereqs), one succeeding and one failing with "already exists".
+  # create-steam_linux.yaml's play 3 targets this group instead.
+  ansible.builtin.add_host:
+    name: "{{ steam_vm_ip }}"
+    groups: steam_vm_new
+    ansible_host: "{{ steam_vm_ip }}"
+    ansible_user: "{{ steam_deploy_user }}"
+    ansible_become: true
+    ansible_ssh_private_key_file: "{{ ssh_private_key_path }}"
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+- name: Persist this VM into the project's static inventory (host_vars)
+  ansible.builtin.copy:
+    dest: "{{ playbook_dir }}/inventory/host_vars/{{ steam_linux_hostname }}.yaml"
+    content: |
+      ---
+      # Generated by create_steam_vm — safe to regenerate, do not hand-edit.
+      ansible_host: "{{ steam_vm_ip }}"
+      ansible_user: "{{ steam_deploy_user }}"
+      ansible_become: true
+      ansible_ssh_private_key_file: "{{ ssh_private_key_path }}"
+      ansible_python_interpreter: /usr/bin/python3
+      ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+      steam_vm_vmid: "{{ steam_vmid }}"
+    mode: '0600'
+
+- name: Ensure this host is listed under [steam_linux] in the static inventory
+  ansible.builtin.lineinfile:
+    path: "{{ playbook_dir }}/inventory/hosts.ini"
+    insertafter: '^\[steam_linux\]$'
+    line: "{{ steam_linux_hostname }}"
+    regexp: "^{{ steam_linux_hostname }}$"
+
+- name: Cache VM facts for later plays (this run only)
+  ansible.builtin.set_fact:
+    steam_vm_created: true
+    steam_vm_vmid: "{{ steam_vmid }}"
+    steam_vm_ip: "{{ steam_vm_ip }}"
+    cacheable: yes
+
+- name: VM creation complete
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      Steam-Linux VM created
+      ============================================
+      VMID: {{ steam_vmid }}
+      Hostname: {{ steam_linux_hostname }}
+      IP: {{ steam_vm_ip }}
+      SSH: ssh -i {{ ssh_private_key_path }} {{ steam_deploy_user }}@{{ steam_vm_ip }}
+
+      Persisted to inventory/host_vars/{{ steam_linux_hostname }}.yaml and
+      inventory/hosts.ini [steam_linux] — create-steam_gameserver.yaml can
+      now target it by name in a separate run.

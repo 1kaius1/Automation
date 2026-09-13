@@ -1,0 +1,144 @@
+---
+# ============================================
+# Proxmox Preflight Checks
+# ============================================
+#
+# Validates the cluster/target node before anything gets created, using
+# real API-backed _info modules. Authentication is inherited from the
+# play's module_defaults (group/community.proxmox.proxmox) — see
+# create-steam_linux.yaml.
+#
+# Fails fast with a clear message on any problem, rather than discovering
+# a missing storage pool halfway through VM creation.
+# ============================================
+
+- name: Query all nodes visible to this API credential
+  community.proxmox.proxmox_node_info:
+  register: preflight_nodes
+
+- name: Fail if the target node isn't visible to this credential
+  ansible.builtin.fail:
+    msg: |
+      Node '{{ proxmox_node }}' was not found via the API. Nodes this
+      credential can see: {{ preflight_nodes.proxmox_nodes | map(attribute='node') | list }}
+
+      Check ../Shared/Ansible/group_vars/proxmox_pve1/vars.yaml (proxmox_node)
+      and that the shared credential in Shared/Ansible/ has cluster-wide ACLs.
+  when: proxmox_node not in (preflight_nodes.proxmox_nodes | map(attribute='node') | list)
+
+- name: Query storage pools
+  community.proxmox.proxmox_storage_info:
+  register: preflight_storage
+
+- name: Fail if storage_pool doesn't exist
+  ansible.builtin.fail:
+    msg: |
+      storage_pool '{{ storage_pool }}' was not found. Storage this
+      credential can see: {{ preflight_storage.proxmox_storages | map(attribute='storage') | list }}
+  when: storage_pool not in (preflight_storage.proxmox_storages | map(attribute='storage') | list)
+
+- name: Warn loudly if backup_storage_target is explicitly deferred
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      WARNING: backup_storage_target is set to "none"
+      ============================================
+      This deploy has NO disaster-recovery backup target configured.
+      A node hardware failure will lose this VM permanently until you set
+      backup_storage_target to a real off-node storage ID and back it up.
+      See the Disaster Recovery section of README.md.
+  when: backup_storage_target == "none"
+
+- name: Fail if backup_storage_target doesn't exist
+  ansible.builtin.fail:
+    msg: |
+      backup_storage_target '{{ backup_storage_target }}' was not found.
+      This is expected to be an OFF-NODE storage target (Proxmox Backup
+      Server, or an NFS/CIFS share) — see the Disaster Recovery section of
+      README.md. If you haven't set that storage up in Proxmox yet, set
+      backup_storage_target to "none" to explicitly defer this, or the
+      "shift to another node after a hardware failure" goal this project
+      is designed around won't work.
+  when:
+    - backup_storage_target != "none"
+    - backup_storage_target not in (preflight_storage.proxmox_storages | map(attribute='storage') | list)
+
+- name: Check whether vm_template_vmid actually exists and is a template
+  community.proxmox.proxmox_vm_info:
+    vmid: "{{ vm_template_vmid }}"
+  register: preflight_template
+  failed_when: false
+
+- name: Fail if the template doesn't exist
+  # This project doesn't build its own template — see
+  # ../Shared/Ansible/create-template-linux.yaml.
+  ansible.builtin.fail:
+    msg: |
+      vm_template_vmid {{ vm_template_vmid }} ('{{ vm_template_name }}')
+      doesn't exist or isn't a template. This project doesn't build one
+      itself — build it with:
+        cd ../Shared/Ansible && ansible-playbook create-template-linux.yaml -e template_target={{ vm_template_name }}
+      ('{{ vm_template_name }}' must be a row in
+      ../Shared/Ansible/template_manifest.yaml), then set
+      vm_template_name/vm_template_vmid in
+      ../Shared/Ansible/group_vars/proxmox_pve1/vars.yaml to match that row
+      (shared across every project — check whether another project already
+      set this correctly before changing it).
+  when: >
+    (preflight_template.proxmox_vms | default([]) | length == 0) or
+    (preflight_template.proxmox_vms[0].template | default(0) | int != 1)
+
+- name: Require an explicit VM network bridge (the template's is the build VLAN)
+  ansible.builtin.assert:
+    that:
+      - network_bridge is defined
+      - network_bridge | length > 0
+      - "'REPLACE_ME' not in network_bridge"
+    fail_msg: >-
+      network_bridge is not set in inventory/group_vars/steam_linux/vars.yaml.
+      The shared template is built on the build VLAN, so create_steam_vm must
+      re-point the clone's NIC at this project's real bridge — set it before deploying.
+    quiet: true
+
+- name: Require DNS servers when the VM uses a static IP
+  ansible.builtin.assert:
+    that:
+      - steam_nameservers is defined
+      - steam_nameservers | length > 0
+      - "'REPLACE_ME' not in steam_nameservers"
+    fail_msg: >-
+      steam_ip_config is static ('{{ steam_ip_config }}') but steam_nameservers
+      is empty in inventory/group_vars/steam_linux/vars.yaml. A static VM has no
+      DHCP to supply a resolver, so cloud-init would leave /etc/resolv.conf empty
+      and every apt step (including steam_prereqs) would fail DNS. Set steam_nameservers.
+    quiet: true
+  when: steam_ip_config != 'dhcp'
+
+- name: Query network interfaces on the target node
+  community.proxmox.proxmox_node_network_info:
+    node: "{{ proxmox_node }}"
+  register: preflight_network
+
+- name: Warn if network_bridge doesn't exist (non-fatal — SDN bridges may not enumerate here)
+  ansible.builtin.debug:
+    msg: |
+      WARNING: bridge '{{ network_bridge }}' wasn't found in the interface
+      list for {{ proxmox_node }}. If you're using an SDN-managed bridge
+      this can be a false positive — verify manually before proceeding.
+  when: network_bridge not in (preflight_network.proxmox_node_network | default([]) | map(attribute='iface') | list)
+
+- name: Check whether a guest named steam_linux_hostname already exists
+  community.proxmox.proxmox_vm_info:
+    name: "{{ steam_linux_hostname }}"
+  register: preflight_existing_guest
+
+- name: Fail if a guest with this hostname already exists
+  ansible.builtin.fail:
+    msg: |
+      A guest named '{{ steam_linux_hostname }}' already exists (vmid
+      {{ preflight_existing_guest.proxmox_vms[0].vmid }}, status
+      {{ preflight_existing_guest.proxmox_vms[0].status }}).
+
+      Either delete it in Proxmox and re-run, or change steam_linux_hostname in
+      inventory/group_vars/steam_linux/vars.yaml.
+  when: preflight_existing_guest.proxmox_vms | length > 0

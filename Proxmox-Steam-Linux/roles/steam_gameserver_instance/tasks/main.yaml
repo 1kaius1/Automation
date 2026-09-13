@@ -1,0 +1,105 @@
+---
+# ============================================
+# Steam Game Server Instance (generic)
+# ============================================
+#
+# Installs/updates ONE game-server instance via SteamCMD and runs it as
+# its own systemd unit. Deliberately contains NO game-specific knowledge
+# — every value comes from steam_gameserver_instance_* vars, normally
+# supplied via -e @<instance vars file> (see gameservers/hlds-dm01.vars.yaml
+# for a real invocation). Game-specific config (server.cfg, mapcycle.txt, ...)
+# is layered on top by a separate <game>_config role, included dynamically
+# by create-steam_gameserver.yaml — see roles/hlds_dm_config for the
+# pattern every future game's own config role would follow.
+#
+# This is the reusable "install this AppID on this host" building block —
+# see README.md "Known limitations / next steps" for how this generalizes
+# into a data-driven, multi-instance mechanism.
+# ============================================
+
+- name: Assert required instance vars are set
+  ansible.builtin.assert:
+    that:
+      - steam_gameserver_instance_name is defined
+      - steam_gameserver_instance_appid is defined
+      - steam_gameserver_instance_launch_binary is defined
+      - steam_gameserver_instance_launch_args is defined
+      - steam_gameserver_instance_port is defined
+    fail_msg: >-
+      steam_gameserver_instance_{name,appid,launch_binary,launch_args,port}
+      must all be set — pass an instance vars file with -e @<path>, e.g.
+      gameservers/hlds-dm01.vars.yaml.
+    quiet: true
+
+- name: Compute this instance's install directory
+  ansible.builtin.set_fact:
+    steam_gameserver_instance_install_dir: "{{ steam_home_dir }}/{{ steam_gameserver_instance_name }}"
+
+- name: Create the instance's install directory
+  ansible.builtin.file:
+    path: "{{ steam_gameserver_instance_install_dir }}"
+    state: directory
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0750'
+  become: true
+
+- name: Install/update the app via SteamCMD
+  # Genuinely idempotent from SteamCMD's own perspective (no-ops when
+  # already current), but Ansible can't cleanly detect "downloaded new
+  # files" vs "already current" from stdout without fragile string
+  # matching — changed_when: false is the honest call, same as
+  # steamcmd_install's self-update task.
+  ansible.builtin.command: >
+    {{ steamcmd_install_dir }}/steamcmd.sh
+    +force_install_dir {{ steam_gameserver_instance_install_dir }}
+    +login anonymous
+    +app_update {{ steam_gameserver_instance_appid }}
+    {{ 'validate' if steam_gameserver_instance_validate else '' }}
+    +quit
+  become: true
+  become_user: "{{ steam_system_user }}"
+  changed_when: false
+
+- name: Render the instance's systemd unit
+  ansible.builtin.template:
+    src: steam-gameserver.service.j2
+    dest: "/etc/systemd/system/steam-{{ steam_gameserver_instance_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - Reload systemd
+    - Restart steam gameserver instance
+
+- name: Allow this instance's game port(s)/protocol(s) through ufw
+  # Opens every (port, protocol) combination — steam_gameserver_instance_extra_ports
+  # covers games needing more than one port (e.g. Valheim: base port + 2
+  # more), steam_gameserver_instance_extra_protocols covers a port needing
+  # more than one protocol (e.g. Valheim: TCP as well as UDP, per
+  # conflicting guidance on whether it's actually required — cheap to open
+  # both). Both empty by default, so a single-port/single-protocol game
+  # like HLDS gets exactly the one rule it always did.
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.0 | string }}"
+    proto: "{{ item.1 }}"
+    src: "{{ steam_gameserver_instance_source_cidr }}"
+  loop: "{{ ([steam_gameserver_instance_port] + steam_gameserver_instance_extra_ports)
+            | product([steam_gameserver_instance_proto] + steam_gameserver_instance_extra_protocols)
+            | list }}"
+  loop_control:
+    label: "{{ item.0 }}/{{ item.1 }}"
+  become: true
+
+- name: Flush handlers so the unit file is current before we (re)start it
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure the instance is enabled and started
+  ansible.builtin.systemd:
+    name: "steam-{{ steam_gameserver_instance_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  become: true

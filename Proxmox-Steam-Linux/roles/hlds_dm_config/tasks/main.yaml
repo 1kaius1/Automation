@@ -1,0 +1,39 @@
+---
+# ============================================
+# HLDS Deathmatch Config
+# ============================================
+#
+# HLDS-specific — layers server.cfg/mapcycle.txt on top of an instance
+# already installed by steam_gameserver_instance (must run first in the
+# same play — see create-steam_gameserver.yaml). Every future distinct
+# game gets its own small <game>_config role following this same shape;
+# steam_gameserver_instance itself stays generic (see README.md "Known
+# limitations / next steps").
+#
+# IMPORTANT: both files live under the mod directory (valve/ for stock
+# Half-Life), not the install root — hlds_run's default +exec server.cfg
+# and mp_mapcyclefile are resolved relative to there.
+# ============================================
+
+- name: Render server.cfg
+  ansible.builtin.template:
+    src: server.cfg.j2
+    dest: "{{ steam_gameserver_instance_install_dir }}/valve/server.cfg"
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0640'
+  become: true
+  notify: Restart steam gameserver instance
+
+- name: Render mapcycle.txt
+  ansible.builtin.template:
+    src: mapcycle.txt.j2
+    dest: "{{ steam_gameserver_instance_install_dir }}/valve/mapcycle.txt"
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0640'
+  become: true
+  notify: Restart steam gameserver instance
+
+- name: Flush handlers so config changes take effect before verification
+  ansible.builtin.meta: flush_handlers

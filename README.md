@@ -15,6 +15,7 @@ Everything is built on **`Shared/Ansible/`**: a repo-local Ansible virtualenv, o
 | `Shared/` | Foundation everything else builds on — `Ansible/` (shared credential, template pipeline, venv, `ansible.cfg`), plus by-language scaffolds (see `Shared/README.md`) | in use |
 | `Proxmox-Forgejo/` | Forgejo git server | deployed |
 | `Proxmox-NextCloud/` | NextCloud + Collabora | in progress |
+| `Proxmox-Steam-Linux/` | SteamCMD dedicated-game-server host (HLDS deathmatch now; data-driven add/remove of other AppIDs planned) | in progress |
 | `Proxmox-PostgreSQL/` | PostgreSQL — the default database here; single node or HA | stub |
 | `Proxmox-MariaDB/` | MariaDB — for MySQL-family apps that don't need Oracle MySQL | stub |
 | `Proxmox-MySQL/` | Oracle MySQL — for the rare app that requires it specifically | stub |

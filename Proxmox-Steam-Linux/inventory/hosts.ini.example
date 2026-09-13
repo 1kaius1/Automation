@@ -1,0 +1,13 @@
+# Ansible Inventory for Steam-Linux Deployment
+# ==============================================
+
+# Local machine — used for Proxmox API calls and orchestration
+[local]
+localhost ansible_connection=local
+
+# Steam-Linux host(s). create_steam_vm (create-steam_linux.yaml) persists
+# each VM it creates here by name, with connection details written to
+# inventory/host_vars/<name>.yaml — that's what lets
+# create-steam_gameserver.yaml (a separate ansible-playbook run) find and
+# target it later. Also populated for the CURRENT run only via add_host.
+[steam_linux]

@@ -1,0 +1,83 @@
+---
+# ============================================
+# Create the Steam-Linux base host
+# ============================================
+#
+# Non-interactive by design — no vars_prompt/pause. Fill in every
+# REPLACE_ME in inventory/group_vars/ before running this (see README.md).
+#
+# This project does NOT build its own VM template — vm_template_name/
+# vm_template_vmid must already exist, built with
+# ../Shared/Ansible/create-template-linux.yaml (shared across every
+# project in this mono-repo). proxmox_preflight fails clearly if it's
+# missing.
+#
+# This is playbook ONE of two (see README.md "Two playbooks"). It
+# provisions a bare Steam-Linux host — clones the template, installs
+# SteamCMD, enables 32-bit support — and ends with NO game-server instance
+# running. Deploy an instance onto the resulting host separately with
+# create-steam_gameserver.yaml.
+#
+# Usage:
+#   ansible-playbook create-steam_linux.yaml
+#
+# ============================================
+
+- name: Preflight checks
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vars.yaml
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml
+    - ../Shared/Ansible/group_vars/proxmox_pve1/vars.yaml
+    - inventory/group_vars/steam_linux/vars.yaml
+  module_defaults:
+    group/community.proxmox.proxmox:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+      api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: false
+  roles:
+    - proxmox_preflight
+
+- name: Create the Steam-Linux VM
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vars.yaml
+    - ../Shared/Ansible/group_vars/proxmox_cluster/vault.yaml
+    - ../Shared/Ansible/group_vars/proxmox_pve1/vars.yaml
+    - inventory/group_vars/steam_linux/vars.yaml
+  module_defaults:
+    group/community.proxmox.proxmox:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_token_id.split('!')[0] }}"
+      api_token_id: "{{ proxmox_api_token_id.split('!')[1] }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: false
+  roles:
+    - create_steam_vm
+
+- name: Install the base SteamCMD environment
+  # hosts: steam_vm_new, NOT steam_linux — steam_linux is the STATIC group
+  # create_steam_vm persists into hosts.ini for future, separate runs of
+  # create-steam_gameserver.yaml. On any run after the first, that static
+  # entry already exists by the time this playbook starts, so targeting
+  # steam_linux here would hit both it and this run's freshly-added host
+  # for the same physical VM — see the comment on the add_host task in
+  # roles/create_steam_vm/tasks/main.yaml for the race this caused.
+  hosts: steam_vm_new
+  gather_facts: true
+  vars:
+    # create_steam_vm cached these on localhost with cacheable: yes — pull
+    # them back in for use in this play (same pattern Proxmox-Forgejo uses
+    # across its own plays).
+    steam_vm_ip: "{{ hostvars['localhost']['steam_vm_ip'] }}"
+    steam_vm_vmid: "{{ hostvars['localhost']['steam_vm_vmid'] }}"
+  vars_files:
+    - inventory/group_vars/steam_linux/vars.yaml
+  roles:
+    - steam_prereqs
+    - steamcmd_install
+    - steam_base_verify

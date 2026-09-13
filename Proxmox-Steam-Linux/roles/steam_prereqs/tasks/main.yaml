@@ -1,0 +1,125 @@
+---
+# ============================================
+# Steam Prerequisites
+# ============================================
+#
+# Base packages, i386 multiarch + 32-bit runtime libs (steamcmd and most
+# Source/GoldSrc dedicated servers are 32-bit binaries), the dedicated
+# service account, directory layout, and baseline firewall. Runs on the
+# freshly-created VM (hosts: steam_linux — see create-steam_linux.yaml).
+#
+# Deliberately opens NO game port here — no game-server instance exists
+# yet at this point. Each instance opens its own ufw rule when it's
+# created, in a separate run of create-steam_gameserver.yaml (see
+# roles/steam_gameserver_instance).
+# ============================================
+
+- name: Update apt cache
+  # No cache_valid_time — this role runs once per VM's lifetime, so
+  # trusting a "recent enough" cache isn't worth the risk (Proxmox-Forgejo
+  # observed this skip the real update on a brand-new VM).
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - tzdata
+      - ufw
+    state: present
+  become: true
+
+- name: Check current foreign architectures
+  ansible.builtin.command: dpkg --print-foreign-architectures
+  changed_when: false
+  register: steam_foreign_arches
+
+- name: Enable the i386 foreign architecture
+  ansible.builtin.command: dpkg --add-architecture i386
+  become: true
+  when: "'i386' not in steam_foreign_arches.stdout_lines"
+  register: steam_i386_added
+
+- name: Refresh apt cache after enabling i386
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+  when: steam_i386_added.changed
+
+- name: Install 32-bit runtime libraries (steamcmd and most dedicated servers are 32-bit)
+  ansible.builtin.apt:
+    name:
+      - lib32gcc-s1
+      - lib32stdc++6
+      - libc6-i386
+    state: present
+  become: true
+
+- name: Create the dedicated steam system group
+  ansible.builtin.group:
+    name: "{{ steam_system_user }}"
+    system: true
+  become: true
+
+- name: Create the dedicated steam system user (no login shell)
+  ansible.builtin.user:
+    name: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    home: "{{ steam_home_dir }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: true
+  become: true
+
+- name: Pre-create the steam user's Ansible remote_tmp directory
+  # Same become_user handoff fragility mitigation as Proxmox-Forgejo's
+  # forgejo_prereqs — later tasks/roles run as become_user: steam.
+  ansible.builtin.file:
+    path: "{{ steam_home_dir }}/.ansible/tmp"
+    state: directory
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0700'
+  become: true
+
+- name: Create the shared SteamCMD application directory
+  ansible.builtin.file:
+    path: "{{ steam_app_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Create the parent directory for all game-server instance data
+  ansible.builtin.file:
+    path: "{{ steam_home_dir }}"
+    state: directory
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0750'
+  become: true
+
+- name: Allow SSH (management access) through ufw
+  community.general.ufw:
+    rule: allow
+    port: '22'
+    proto: tcp
+  become: true
+
+- name: Set default deny incoming / allow outgoing
+  community.general.ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+  become: true
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled
+  become: true

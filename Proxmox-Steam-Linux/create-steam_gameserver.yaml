@@ -1,0 +1,60 @@
+---
+# ============================================
+# Create/update a Steam game-server instance
+# ============================================
+#
+# Deploys ONE game-server instance (installed/updated via SteamCMD, run as
+# its own systemd unit) onto an ALREADY-PROVISIONED Steam-Linux host —
+# create-steam_linux.yaml must have been run first, and this playbook
+# targets whichever host(s) that run persisted into inventory/host_vars/
+# under the [steam_linux] group (see README.md "Two playbooks").
+#
+# This is playbook TWO of two. Fully generic and data-driven — everything
+# game-specific comes from an instance vars file passed with -e @<path>:
+#
+#   ansible-playbook create-steam_gameserver.yaml \
+#     -e @gameservers/hlds-dm01.vars.yaml
+#
+# Unlike create-steam_linux.yaml, this playbook makes NO Proxmox API calls
+# at all — it's pure SSH/systemd automation against an already-reachable
+# Linux host, regardless of how that host was provisioned. That's
+# deliberate: this is the reusable "install this game server on this
+# already-running node" building block — see README.md "Known limitations
+# / next steps" for how this could become the basis of a future
+# orchestration layer (Proxmox VMs or Kubernetes pods as the backend,
+# neither of which this playbook itself needs to know about).
+#
+# steam_gameserver_config_role (set in the instance vars file) names the
+# game-specific role to layer config on top with — "hlds_dm_config" for
+# HLDS. Not every game needs one (e.g. Valheim: everything is CLI args/env
+# vars, no config-file rendering) — the instance vars file simply omits
+# this var in that case.
+#
+# Uses ansible.builtin.include_role (a TASK), not a static roles: list
+# entry, specifically so that's possible: a static "role: {{ var }}"
+# resolves the role name at parse time, before its when: is ever
+# evaluated — so an OMITTED (not just falsy) steam_gameserver_config_role
+# would fail immediately, on every game that doesn't need a config role,
+# not just at --syntax-check. include_role defers both the templating and
+# the when: check to actual execution, so no instance vars are needed at
+# all just to --syntax-check this playbook.
+# ============================================
+
+- name: Deploy a Steam game-server instance
+  hosts: steam_linux
+  gather_facts: true
+  vars_files:
+    - inventory/group_vars/steam_linux/vars.yaml
+  tasks:
+    - name: Install/update the game-server instance
+      ansible.builtin.include_role:
+        name: steam_gameserver_instance
+
+    - name: Layer game-specific config, if this instance needs one
+      ansible.builtin.include_role:
+        name: "{{ steam_gameserver_config_role }}"
+      when: steam_gameserver_config_role is defined
+
+    - name: Verify the instance is up
+      ansible.builtin.include_role:
+        name: steam_gameserver_verify

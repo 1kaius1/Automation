@@ -1,6 +1,6 @@
 # Shared/Ansible
 
-Ansible assets shared across every automation project in this mono-repo that talks to Proxmox — currently `Proxmox-Forgejo` and `Proxmox-NextCloud`.
+Ansible assets shared across every automation project in this mono-repo that talks to Proxmox — currently `Proxmox-Forgejo`, `Proxmox-NextCloud`, and `Proxmox-Steam-Linux`.
 
 ## Why this exists
 
@@ -25,6 +25,7 @@ One name, two mechanisms, both provisioned by **`create-pve_svc_user.yaml`**:
 - `proxmox_permissions.yaml` — the least-privilege privilege list for the shared role (covers both VM and LXC provisioning). Edit it, then re-run `create-pve_svc_user.yaml`, to change what the account may do cluster-wide.
 - `group_vars/proxmox_cluster/vars.yaml` — non-secret connection details (`proxmox_api_host`, `proxmox_api_token_id`). This repo is public and `proxmox_api_host` identifies your real cluster, so this file is gitignored — `create-pve_svc_user.yaml` generates it locally. `vars.yaml.example` (committed) documents its shape.
 - `group_vars/proxmox_cluster/vault.yaml.example` — documents the one variable the real, encrypted `vault.yaml` defines (`vault_proxmox_api_token_secret`). The real `vault.yaml` is generated (and Vault-encrypted) by `create-pve_svc_user.yaml`, not written by hand — see `docs/ANSIBLE_VAULT_GUIDE.md` for how Ansible Vault works if you've never used it.
+- `group_vars/proxmox_pve1/vars.yaml.example` — shared node/cluster settings every Proxmox-facing project consumes via `vars_files:` (`proxmox_node`, `storage_pool`, `vm_template_name`/`vm_template_vmid`, `backup_storage_target`): one value per cluster, not one copy per project. Copy it to `vars.yaml` once (not once per project) and fill it in; a later project needing a different node/storage/template/backup can override just that var with its own `vars_files:` entry loaded after this one. Deliberately does **not** include `network_bridge`/`network_vlan_tag`/IP config — those stay in each project's own `inventory/group_vars/`, since they genuinely differ per project (an internal, reverse-proxied app vs. a directly-reachable game server, for instance).
 - `create-template-linux.yaml` — builds a hardened, cloud-init-ready Proxmox VM template (Debian 12/13, Ubuntu 24.04/26.04, Rocky 9/10, Arch; RHEL 9/10 are stubbed), usable by any project in this mono-repo — not specific to Forgejo. Builds one template per run; **only creates — never deletes or modifies a VM** (see "Building a VM template" below).
 - `template_manifest.yaml` — committed source of truth for the `name → VMID → OS/version` mapping of every template the playbook can build. Templates are allocated VMIDs from 90000 up; adding one is a one-line append. Consuming projects copy a `name`/`vmid` pair from here.
 - `create-templates_from_manifest.sh` — walks `template_manifest.yaml` and runs `create-template-linux.yaml` once per row, building the templates that are missing and skipping the ones that already exist. The "make all the base templates" entry point.

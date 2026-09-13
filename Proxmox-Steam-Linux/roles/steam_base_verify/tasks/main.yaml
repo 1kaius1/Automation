@@ -1,0 +1,36 @@
+---
+# ============================================
+# Steam Base Verify
+# ============================================
+#
+# Confirms the base Steam-Linux host (create-steam_linux.yaml) is ready
+# to receive game-server instances. Does NOT check any specific game —
+# that's steam_gameserver_verify's job, run separately by
+# create-steam_gameserver.yaml.
+# ============================================
+
+- name: Confirm the i386 architecture is enabled
+  ansible.builtin.command: dpkg --print-foreign-architectures
+  changed_when: false
+  register: steam_verify_arches
+  failed_when: "'i386' not in steam_verify_arches.stdout_lines"
+
+- name: Confirm steamcmd is installed and runnable
+  ansible.builtin.stat:
+    path: "{{ steamcmd_install_dir }}/steamcmd.sh"
+  register: steam_verify_steamcmd
+  failed_when: not steam_verify_steamcmd.stat.exists
+
+- name: Verification passed
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      Steam-Linux base host ready on {{ steam_vm_ip }}
+      ============================================
+      SteamCMD: {{ steamcmd_install_dir }}/steamcmd.sh
+      Inventory hostname: {{ steam_linux_hostname }} (see inventory/host_vars/{{ steam_linux_hostname }}.yaml)
+
+      Next: deploy a game-server instance onto this host with
+      create-steam_gameserver.yaml, e.g.:
+        ansible-playbook create-steam_gameserver.yaml \
+          -e @gameservers/hlds-dm01.vars.yaml
