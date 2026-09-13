@@ -1,0 +1,50 @@
+---
+# ============================================
+# Steam Game Server Verify
+# ============================================
+#
+# ansible.builtin.wait_for only supports TCP, not UDP, so this checks
+# systemd state plus a real UDP-socket-bound check via `ss`, rather than
+# inventing a UDP wait_for that doesn't exist. The journalctl tail is
+# informational only — surfaced for a human to read, not asserted against
+# a specific startup string (no confidently-verified GoldSrc startup line
+# to gate on yet; capture the real one from a live deploy and harden this
+# into a real assert in a follow-up).
+# ============================================
+
+- name: Confirm the instance's service is active
+  ansible.builtin.command: "systemctl is-active steam-{{ steam_gameserver_instance_name }}"
+  become: true
+  register: steam_gameserver_service_status
+  changed_when: false
+  failed_when: steam_gameserver_service_status.stdout != "active"
+
+- name: Confirm the instance's port is actually bound
+  # retries/delay bumped from 6x5s (30s) to 12x5s (60s) after a live
+  # Valheim deploy missed the shorter window by ~4s — full world load +
+  # "Opened Steam server" took a bit longer than HLDS's near-instant bind.
+  ansible.builtin.command: "ss -{{ 'u' if steam_gameserver_instance_proto == 'udp' else 't' }}ln"
+  become: true
+  changed_when: false
+  register: steam_gameserver_ss
+  until: (':' ~ steam_gameserver_instance_port) in steam_gameserver_ss.stdout
+  retries: 12
+  delay: 5
+
+- name: Tail the instance's recent journal (informational)
+  ansible.builtin.command: "journalctl -u steam-{{ steam_gameserver_instance_name }} -n 50 --no-pager"
+  become: true
+  changed_when: false
+  register: steam_gameserver_journal
+
+- name: Verification passed
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      {{ steam_gameserver_instance_name }} is active on {{ ansible_host | default(inventory_hostname) }}:{{ steam_gameserver_instance_port }}/{{ steam_gameserver_instance_proto }}
+      ============================================
+      Recent journal (review by hand — nothing here is asserted automatically):
+      {{ steam_gameserver_journal.stdout }}
+
+      Connect with a Half-Life/GoldSrc client, or an A2S_INFO query tool,
+      from OUTSIDE this VM's own host to confirm it's really reachable.

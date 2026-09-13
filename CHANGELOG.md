@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Stub directories for planned deployments, each a `README.md` only: `Proxmox-CA`, `Proxmox-MariaDB`, `Proxmox-MySQL`, `Proxmox-OpenVox`, `Proxmox-PostgreSQL`, `Proxmox-Redis`, `Proxmox-nginx`.
 - `README.md` expanded from a one-liner into a repo overview — layout table (with per-project status), how projects build on `Shared/Ansible/`, getting-started, and the public-repo / changelog conventions. `CLAUDE.md` gains "Toolchain" (venv, never `pip install` on system Python) and "Project structure" (self-contained `Proxmox-<Component>/`, stub definition, CRUD-verb playbook prefix, `.yaml` not `.yml`) sections.
 - New project: `Proxmox-Forgejo` — Ansible-based Forgejo deployment on Proxmox.
+- New project: `Proxmox-Steam-Linux` — Ansible-based SteamCMD dedicated-game-server deployment on Proxmox.
 - `Shared/Ansible/` — shared, cluster-wide Proxmox automation credential and bootstrap tooling, usable by any project in this repo.
 - `CLAUDE.md` — repo-wide conventions for Claude Code sessions, including the changelog workflow itself and the public-repo `.example`-file rule.
 

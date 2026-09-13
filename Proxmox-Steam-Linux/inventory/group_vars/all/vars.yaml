@@ -1,0 +1,7 @@
+---
+# Global, non-secret variables shared by every play in this project.
+
+ssh_private_key_path: "{{ playbook_dir }}/ssh_keys/id_ed25519"
+ssh_public_key_path: "{{ playbook_dir }}/ssh_keys/id_ed25519.pub"
+
+ansible_python_interpreter: /usr/bin/python3

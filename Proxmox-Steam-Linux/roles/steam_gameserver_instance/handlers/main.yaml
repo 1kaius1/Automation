@@ -1,0 +1,18 @@
+---
+# NOTE: these handler names are fixed, not per-instance. Fine today, since
+# create-steam_gameserver.yaml deploys exactly one instance per run. A
+# future loop-driven multi-instance version (see README.md "Known
+# limitations / next steps") would need an ansible.builtin.meta:
+# flush_handlers between loop iterations, or per-instance handler names —
+# not solved here.
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: Restart steam gameserver instance
+  ansible.builtin.systemd:
+    name: "steam-{{ steam_gameserver_instance_name }}"
+    state: restarted
+  become: true

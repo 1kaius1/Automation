@@ -1,0 +1,14 @@
+---
+steam_gameserver_instance_validate: true
+steam_gameserver_instance_proto: udp
+steam_gameserver_instance_source_cidr: "0.0.0.0/0"
+
+# Some games need more than one port (e.g. Valheim: 3 consecutive ports),
+# more than one protocol per port (sources disagree on whether Valheim
+# needs TCP as well as UDP — cheap to open both), or environment variables
+# set on the process (e.g. Valheim's LD_LIBRARY_PATH/SteamAppId) — all
+# default to empty/single so a simple single-port, UDP-only, no-env game
+# like HLDS needs to set none of them.
+steam_gameserver_instance_extra_ports: []
+steam_gameserver_instance_extra_protocols: []
+steam_gameserver_instance_env: {}

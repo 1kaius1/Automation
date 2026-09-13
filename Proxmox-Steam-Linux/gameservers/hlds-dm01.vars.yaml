@@ -1,0 +1,54 @@
+---
+# Phase-A validation instance: HLDS (Half-Life Dedicated Server, Steam
+# AppID 90, anonymous login) running stock deathmatch maps on a 10-minute
+# rotation. Committed directly (not as a .example) — nothing here is a
+# secret or site-specific value, unlike this project's other config.
+#
+# Usage (after create-steam_linux.yaml has provisioned the base host):
+#   ansible-playbook create-steam_gameserver.yaml \
+#     -e @gameservers/hlds-dm01.vars.yaml
+#
+# This file's shape is also the template for any future instance
+# definition — see README.md "Known limitations / next steps" for how a
+# data-driven, multi-instance version of this generalizes later.
+
+# ---- generic steam_gameserver_instance vars ----
+steam_gameserver_instance_name: hlds-dm01
+steam_gameserver_instance_appid: 90
+steam_gameserver_instance_validate: true
+
+steam_gameserver_instance_launch_binary: hlds_run
+steam_gameserver_instance_launch_args:
+  - "-game"
+  - "valve"
+  - "-console"
+  - "-port"
+  - "{{ steam_gameserver_instance_port }}"
+  - "+maxplayers"
+  - "{{ hlds_dm01_maxplayers }}"
+  - "+map"
+  - "{{ hlds_dm01_maplist[0] }}"
+
+steam_gameserver_instance_port: 27015
+steam_gameserver_instance_proto: udp
+# Game servers are reached directly, not through a reverse proxy (see
+# README.md) — public by design. Narrow this for LAN-only testing.
+steam_gameserver_instance_source_cidr: "0.0.0.0/0"
+
+# Names the role hlds_dm_config — create-steam_gameserver.yaml includes it
+# dynamically after steam_gameserver_instance. A future game gets its own
+# small <game>_config role named here the same way.
+steam_gameserver_config_role: hlds_dm_config
+
+# ---- hlds_dm_config-specific vars ----
+hlds_dm01_hostname: "Stygian Forge HLDS DM"
+hlds_dm01_maxplayers: 16
+hlds_dm01_timelimit: 10
+hlds_dm01_maplist:
+  - crossfire
+  - datacore
+  - stalkyard
+  - snark_pit
+  - boot_camp
+  - subtransit
+  - undertow

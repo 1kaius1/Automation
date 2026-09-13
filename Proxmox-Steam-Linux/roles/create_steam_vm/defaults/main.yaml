@@ -1,0 +1,6 @@
+---
+steam_vmid_min: 100
+ssh_boot_wait_seconds: 20
+network_vlan_tag: ""
+steam_nameservers: ""
+steam_searchdomains: ""

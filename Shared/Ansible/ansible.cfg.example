@@ -35,6 +35,20 @@ fact_caching = jsonfile
 fact_caching_connection = /tmp/ansible_facts
 fact_caching_timeout = 3600
 
+# Lets ansible-playbook find the repo's shared collections
+# (.ansible/collections/, built by Shared/Ansible/bootstrap.sh) without
+# needing ANSIBLE_COLLECTIONS_PATH exported in your shell first — useful
+# for any ad-hoc/direct invocation that isn't wrapped by a Deploy.sh-style
+# script. CWD-relative, like inventory above.
+#
+# The value below (../.ansible/collections) is correct for every
+# Proxmox-*/ project — one directory below the repo root. Shared/Ansible/
+# itself is TWO directories below the root, so its own real ansible.cfg
+# needs collections_path = ../../.ansible/collections instead — change
+# this one line after copying the file there; everything else in COMMON
+# stays verbatim.
+collections_path = ../.ansible/collections
+
 # One shared vault identity / master password for the whole repo — the
 # same label/file decrypts group_vars/proxmox_cluster/vault.yaml AND each
 # project's own inventory/group_vars/*/vault.yaml. Rename the label and
@@ -60,4 +74,8 @@ ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=
 
 # ============================================================
 # Proxmox-NextCloud — (nothing project-specific yet)
+# ============================================================
+
+# ============================================================
+# Proxmox-Steam-Linux — (nothing project-specific yet)
 # ============================================================

@@ -1,0 +1,47 @@
+---
+# Shared node/cluster settings for every Proxmox-facing project in this
+# mono-repo — which node guests land on, storage pool, the shared VM
+# template to clone, and the off-node backup target. These are one value
+# for the whole cluster, not per-project, so they live here instead of
+# being re-copied into every project's own inventory/group_vars/ (the
+# tedium that prompted centralizing this — see Proxmox-Steam-Linux's
+# CHANGELOG.md for the full rationale).
+#
+# Deliberately does NOT include network_bridge / network_vlan_tag / IP
+# config — those stay in each project's own inventory/group_vars/, since
+# they genuinely differ per project (e.g. Proxmox-Steam-Linux may run
+# several VMs across different subnets for different stakeholders; a
+# reverse-proxied internal app like Forgejo needs a different bridge than
+# a directly-reachable game server).
+#
+# A project needing a different node/storage/template/backup target than
+# the shared default can override just that var: add a vars_files entry
+# AFTER this one with only the var(s) it needs to differ (later
+# vars_files entries win) — not built here since no project needs it yet.
+#
+# EDIT EVERY "REPLACE_ME" VALUE BELOW BEFORE FIRST RUN.
+
+# Which cluster node guests created by any project land on.
+proxmox_node: "REPLACE_ME_NODE_NAME"
+
+# Storage pool for VM disks (e.g. "local-lvm", "local-zfs", a Ceph pool name).
+storage_pool: "REPLACE_ME_STORAGE_POOL"
+
+# Name and VMID of the reusable cloud-init template every project clones
+# from. Built with ../Shared/Ansible/create-template-linux.yaml; the
+# name -> VMID mapping is the source of truth in
+# ../Shared/Ansible/template_manifest.yaml — copy a row's name and vmid
+# here verbatim.
+vm_template_name: "T-Debian-13-Cloud"
+vm_template_vmid: 90001
+
+# Off-node Proxmox storage ID (Proxmox Backup Server, or an NFS/CIFS share
+# added as Proxmox storage) that backups get sent to. This MUST be storage
+# that survives this node's hardware failing.
+#
+# Set to "none" to explicitly defer this — each project's own preflight
+# role turns it into a loud warning instead of blocking the deploy. This
+# does NOT give you working disaster recovery; it's a deliberate, visible
+# way to test the rest of a deploy before off-node storage exists. Replace
+# it with a real storage ID before relying on this for anything.
+backup_storage_target: "REPLACE_ME_OFF_NODE_BACKUP_STORAGE_ID"
