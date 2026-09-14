@@ -17,6 +17,15 @@ Ansible runs from a repo-local virtualenv at `<repo>/.venv`, built by `Shared/An
 - Playbooks and scripts take a CRUD-verb prefix — `create-`, `read-`, `update-`, `delete-` (e.g. `create-template-linux.yaml`, `update-vm_disk-grow.yaml`).
 - YAML files use the `.yaml` extension, never `.yml`.
 
+## Idempotency
+
+Every playbook and role must be safely re-runnable. Before considering a playbook
+done, run it twice against the same target and confirm the second run reports
+`changed=0` — not just that the first run succeeded. Prefer Ansible's built-in
+modules (idempotent by design) over `shell`/`command` tasks; when `shell`/`command`
+is unavoidable, guard it with `creates`, `changed_when`, or an explicit check so
+re-runs don't misreport or repeat work.
+
 ## Changelog workflow
 
 Every project directory (`Proxmox-Forgejo/`, `Proxmox-NextCloud/`, `Shared/`, and any future top-level project) has its own `CHANGELOG.md` in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. The root `CHANGELOG.md` is separate and scoped differently.
@@ -29,4 +38,4 @@ Every project directory (`Proxmox-Forgejo/`, `Proxmox-NextCloud/`, `Shared/`, an
 
 ## Public repo
 
-This repository is public. Never commit real cluster/node names, IPs, internal domains, admin emails, or internal-network CIDRs — see `Proxmox-Forgejo/README.md` and `Shared/Ansible/README.md` for the established `.example`-file convention (real, site-specific files are gitignored; only placeholder `.example` files are committed). Secrets always go through Ansible Vault (encrypted ciphertext is safe to commit) — see `Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md`.
+This repository is public. Never commit real cluster/node names, IPs, internal domains, admin emails, or internal-network CIDRs — see `Proxmox-Forgejo/README.md` and `Shared/Ansible/README.md` for the established `.example`-file convention (real, site-specific files are gitignored; only placeholder `.example` files are committed). Secrets always go through Ansible Vault (encrypted ciphertext is safe to commit) — see `Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md`. Never call `ansible-vault` in a way that prints decrypted content to a log a CI system or shell history would retain.
