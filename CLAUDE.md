@@ -2,6 +2,10 @@
 
 Repo-wide instructions for Claude Code sessions working in this mono-repo.
 
+Git workflow rules - branching, commits, pull requests, destructive-operation
+confirmation - live in `.claude/rules/git-workflow.md` and load automatically;
+see that file, not this one, for those.
+
 ## Toolchain
 
 Ansible runs from a repo-local virtualenv at `<repo>/.venv`, built by `Shared/Ansible/bootstrap.sh` (collections in `<repo>/.ansible/`, both gitignored). **Never `pip install` Ansible or its dependencies onto the system Python.** Run playbooks through a project's `Deploy.sh` / `Install-Prerequisites.sh` (they put `.venv/bin` on `PATH` and export `ANSIBLE_COLLECTIONS_PATH`), or `source .venv/bin/activate` for ad-hoc commands.
