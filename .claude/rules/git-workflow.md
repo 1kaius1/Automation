@@ -39,6 +39,10 @@ there is nothing to reference or open manually.
 - PRs target `master`
 - Description follows the Summary / Test plan structure in
   `.github/pull_request_template.md`
+- NEVER merge a pull request without the user's explicit instruction to do so -
+  opening a PR, or the user reviewing it, does not imply authorization to merge
+  it. Merging is a manual, final-review step the user performs via the GitHub
+  web interface, not something to do autonomously or as an assumed next step.
 - This repo has no CI - before opening a PR, run `ansible-playbook <playbook>
   --syntax-check` on every playbook touched, and a `--check` (dry-run) pass
   where it is safe to do so
