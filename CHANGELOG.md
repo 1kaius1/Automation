@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - New project: `Proxmox-Steam-Linux` — Ansible-based SteamCMD dedicated-game-server deployment on Proxmox.
 - `Shared/Ansible/` — shared, cluster-wide Proxmox automation credential and bootstrap tooling, usable by any project in this repo.
 - `CLAUDE.md` — repo-wide conventions for Claude Code sessions, including the changelog workflow itself and the public-repo `.example`-file rule.
+- `.claude/rules/git-workflow.md`, `.claude/settings.json`, and `.github/pull_request_template.md` — formalized branching/commit/PR conventions (feature-branch + PR required, Conventional Commits, no AI-attribution, a Shared/ dependency sequencing rule) backed by real guardrails (denies force-push and hard reset, asks before other destructive operations) and a PR template with hard gates for the changelog and public-repo secrecy rules.
 
 ### Changed
 
