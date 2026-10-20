@@ -11,8 +11,23 @@
     daemon_reload: true
   become: true
 
+- name: Check whether the steam gameserver instance is running
+  # A restart is only wanted for an instance that is already up. An
+  # instance that is stopped — on purpose, e.g. taken down for maintenance
+  # or an update — must stay stopped: state: restarted would START it.
+  # "Ensure the instance is enabled and started" in tasks/main.yaml is what
+  # starts a stopped instance (skip it with --skip-tags start).
+  ansible.builtin.command: "systemctl is-active steam-{{ steam_gameserver_instance_name }}"
+  become: true
+  register: steam_gameserver_instance_running
+  changed_when: false
+  failed_when: false
+
 - name: Restart steam gameserver instance
+  # Skipped (not "changed") when the instance isn't running, so the play
+  # recap doesn't claim a restart that never happened.
   ansible.builtin.systemd:
     name: "steam-{{ steam_gameserver_instance_name }}"
     state: restarted
   become: true
+  when: steam_gameserver_instance_running.stdout in ['active', 'activating']

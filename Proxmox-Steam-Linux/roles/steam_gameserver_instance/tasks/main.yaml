@@ -71,6 +71,7 @@
   become: true
   notify:
     - Reload systemd
+    - Check whether the steam gameserver instance is running
     - Restart steam gameserver instance
 
 - name: Allow this instance's game port(s)/protocol(s) through ufw
