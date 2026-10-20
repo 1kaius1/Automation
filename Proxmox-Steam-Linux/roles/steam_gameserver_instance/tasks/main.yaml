@@ -15,6 +15,13 @@
 # This is the reusable "install this AppID on this host" building block —
 # see README.md "Known limitations / next steps" for how this generalizes
 # into a data-driven, multi-instance mechanism.
+#
+# INSTALL-ONLY: SteamCMD runs here only when the app is not installed yet.
+# An already-installed instance is never re-updated by this role — upgrades
+# and beta-branch changes belong to update-steam_gameserver.yaml (role
+# steam_gameserver_update), which stops the server first. That keeps this
+# role idempotent (a re-run never bounces a healthy server). See README.md
+# "Updating game servers".
 # ============================================
 
 - name: Assert required instance vars are set
@@ -44,22 +51,71 @@
     mode: '0750'
   become: true
 
-- name: Install/update the app via SteamCMD
-  # Genuinely idempotent from SteamCMD's own perspective (no-ops when
-  # already current), but Ansible can't cleanly detect "downloaded new
-  # files" vs "already current" from stdout without fragile string
-  # matching — changed_when: false is the honest call, same as
-  # steamcmd_install's self-update task.
-  ansible.builtin.command: >
-    {{ steamcmd_install_dir }}/steamcmd.sh
-    +force_install_dir {{ steam_gameserver_instance_install_dir }}
-    +login anonymous
-    +app_update {{ steam_gameserver_instance_appid }}
-    {{ 'validate' if steam_gameserver_instance_validate else '' }}
-    +quit
+- name: Create the instance's game-data directory
+  ansible.builtin.file:
+    path: "{{ steam_gameserver_instance_data_dir }}"
+    state: directory
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0750'
   become: true
-  become_user: "{{ steam_system_user }}"
-  changed_when: false
+
+- name: Create the host's instance registry directory
+  ansible.builtin.file:
+    path: "{{ steam_registry_dir }}"
+    state: directory
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0750'
+  become: true
+
+- name: Read the installed build id, if the app is already installed
+  ansible.builtin.include_tasks: read_buildid.yaml
+
+- name: Read this instance's existing registry entry, if any
+  ansible.builtin.slurp:
+    src: "{{ steam_registry_dir }}/{{ steam_gameserver_instance_name }}.yaml"
+  become: true
+  register: steam_gameserver_instance_registry_raw
+  failed_when: false
+
+- name: Remember whether this is a first install
+  # Captured before app_update.yaml runs — it re-reads the manifest, so
+  # manifest.stat.exists is always true afterwards.
+  ansible.builtin.set_fact:
+    steam_gameserver_instance_fresh_install: "{{ (not steam_gameserver_instance_manifest.stat.exists) | bool }}"
+
+- name: Install the app via SteamCMD (first install only)
+  ansible.builtin.include_tasks: app_update.yaml
+  when: steam_gameserver_instance_fresh_install
+
+- name: Work out which branch is actually installed
+  # First install: the declared branch (just installed). Already installed
+  # and registered: whatever the registry recorded. Already installed but
+  # not registered yet (instances deployed before the registry existed):
+  # "public" — before the registry, no -beta flag could be passed at all,
+  # so a pre-registry install can only be on the default branch.
+  ansible.builtin.set_fact:
+    steam_gameserver_instance_applied_branch: >-
+      {{ steam_gameserver_instance_beta_branch
+         if steam_gameserver_instance_fresh_install
+         else ((steam_gameserver_instance_registry_raw.content | b64decode | from_yaml).applied_branch
+               if steam_gameserver_instance_registry_raw.content is defined
+               else 'public') }}
+    steam_gameserver_instance_applied_buildid: "{{ steam_gameserver_instance_buildid }}"
+
+- name: Record this instance in the host's registry
+  ansible.builtin.include_tasks: register.yaml
+
+- name: Note a pending branch change
+  ansible.builtin.debug:
+    msg: >-
+      {{ steam_gameserver_instance_name }}: declared branch
+      "{{ steam_gameserver_instance_beta_branch }}" differs from the installed
+      branch "{{ steam_gameserver_instance_applied_branch }}". Nothing was changed on the
+      install — apply it with update-steam_gameserver.yaml (see README.md
+      "Updating game servers" for the confirmation it requires).
+  when: steam_gameserver_instance_beta_branch != steam_gameserver_instance_applied_branch
 
 - name: Render the instance's systemd unit
   ansible.builtin.template:
@@ -97,9 +153,12 @@
   ansible.builtin.meta: flush_handlers
 
 - name: Ensure the instance is enabled and started
+  # Tagged so an instance can be deployed/registered while deliberately
+  # left stopped (e.g. during maintenance): --skip-tags start,verify
   ansible.builtin.systemd:
     name: "steam-{{ steam_gameserver_instance_name }}"
     state: started
     enabled: true
     daemon_reload: true
   become: true
+  tags: start

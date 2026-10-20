@@ -1,0 +1,39 @@
+---
+# One registry entry (loop_var: entry) — see main.yaml.
+
+- name: "Update {{ entry.name }}"
+  vars:
+    steam_gameserver_instance_name: "{{ entry.name }}"
+    steam_gameserver_instance_appid: "{{ entry.appid }}"
+    steam_gameserver_instance_beta_branch: "{{ entry.branch }}"
+    steam_gameserver_instance_beta_password: "{{ entry.branch_password | default('') }}"
+    steam_gameserver_instance_data_dir: "{{ entry.data_dir | default(steam_home_dir ~ '/' ~ entry.name ~ '/data') }}"
+  block:
+    - name: "Stop {{ entry.name }} so the update starts from a quiesced state"
+      ansible.builtin.systemd:
+        name: "{{ entry.service | default('steam-' ~ entry.name) }}"
+        state: stopped
+      become: true
+
+    - name: "Update {{ entry.name }} via SteamCMD"
+      ansible.builtin.include_role:
+        name: steam_gameserver_instance
+        tasks_from: app_update
+
+    - name: "Record the applied branch and build for {{ entry.name }}"
+      ansible.builtin.set_fact:
+        steam_gameserver_instance_applied_branch: "{{ entry.branch }}"
+        steam_gameserver_instance_applied_buildid: "{{ steam_gameserver_instance_buildid }}"
+
+    - name: "Update {{ entry.name }}'s registry entry"
+      ansible.builtin.include_role:
+        name: steam_gameserver_instance
+        tasks_from: register
+
+    - name: "Keep {{ entry.name }}'s result for the summary"
+      ansible.builtin.set_fact:
+        steam_gameserver_update_results: >-
+          {{ steam_gameserver_update_results | default([])
+             + [{'name': entry.name, 'branch': entry.branch,
+                 'before': steam_gameserver_instance_buildid_before,
+                 'after': steam_gameserver_instance_buildid}] }}

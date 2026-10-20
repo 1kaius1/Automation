@@ -1,0 +1,35 @@
+---
+# Writes this instance's entry in the host's registry
+# ({{ steam_registry_dir }}/<name>.yaml). One file per instance, written
+# atomically — only changed when its content changes.
+#
+# "branch"/"branch_password" are the DECLARED branch (from the instance
+# vars file, via create-steam_gameserver.yaml); "applied_*" is what is
+# actually installed (set when an install/update runs). update-steam_gameserver.yaml
+# reconciles the two.
+#
+# "data_dir" is where the game keeps its saves — what to back up before a
+# branch switch.
+#
+# Needs steam_gameserver_instance_{name,appid,beta_branch,beta_password,
+# applied_branch,applied_buildid} set.
+
+- name: Record this instance in the host's registry
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible (create-steam_gameserver.yaml / update-steam_gameserver.yaml).
+      {{ {
+        'name': steam_gameserver_instance_name,
+        'appid': steam_gameserver_instance_appid | int,
+        'service': 'steam-' ~ steam_gameserver_instance_name,
+        'data_dir': steam_gameserver_instance_data_dir,
+        'branch': steam_gameserver_instance_beta_branch,
+        'branch_password': steam_gameserver_instance_beta_password,
+        'applied_branch': steam_gameserver_instance_applied_branch,
+        'applied_buildid': steam_gameserver_instance_applied_buildid | string,
+      } | to_nice_yaml }}
+    dest: "{{ steam_registry_dir }}/{{ steam_gameserver_instance_name }}.yaml"
+    owner: "{{ steam_system_user }}"
+    group: "{{ steam_system_user }}"
+    mode: '0640'
+  become: true

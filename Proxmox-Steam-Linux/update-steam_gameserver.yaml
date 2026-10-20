@@ -1,0 +1,35 @@
+---
+# ============================================
+# Update every registered game-server instance on a Steam-Linux host
+# ============================================
+#
+# For each instance recorded in the host's registry (written by
+# create-steam_gameserver.yaml): stop it, bring its Steam app up to the
+# latest build on its declared beta branch, and LEAVE IT STOPPED. Start it
+# again yourself when ready:
+#
+#   sudo systemctl start steam-<instance-name>
+#
+#   ansible-playbook update-steam_gameserver.yaml                     # every instance
+#   ansible-playbook update-steam_gameserver.yaml -e steam_instance=valheim-1   # just one
+#
+# Changing an instance's beta branch: edit steam_gameserver_instance_beta_branch
+# in its vars file, re-run create-steam_gameserver.yaml (records the new
+# declared branch; changes nothing on the install), then run this with
+# -e confirm_branch_change=true. Without that flag a branch change is
+# refused before anything is stopped — see README.md "Updating game servers".
+#
+# Pure SSH/systemd/SteamCMD like create-steam_gameserver.yaml: no Proxmox
+# API calls. Re-runnable: instances already stopped and current report
+# changed=0.
+# ============================================
+
+- name: Update registered Steam game-server instances
+  hosts: steam_linux
+  gather_facts: false
+  vars_files:
+    - inventory/group_vars/steam_linux/vars.yaml
+  tasks:
+    - name: Update the host's registered instances
+      ansible.builtin.include_role:
+        name: steam_gameserver_update

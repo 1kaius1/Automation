@@ -1,0 +1,106 @@
+---
+# ============================================
+# Steam Game Server Update (all registered instances on a host)
+# ============================================
+#
+# Reconciles every instance in the host's registry (see
+# steam_gameserver_instance/tasks/register.yaml) to its declared beta
+# branch and the latest build on it:
+#
+#   1. read the registry (narrowed to one instance with -e steam_instance=<name>)
+#   2. refuse — before touching anything — if any instance's declared branch
+#      differs from the installed one and the change isn't confirmed
+#   3. per instance: stop the service, run SteamCMD, update the registry
+#
+# Instances are deliberately LEFT STOPPED. Stopping first quiesces the
+# filesystem and game state so the update is clean; bringing the server back
+# is the operator's call:
+#   sudo systemctl start steam-<instance-name>
+# ============================================
+
+- name: Find the host's registered instances
+  ansible.builtin.find:
+    paths: "{{ steam_registry_dir }}"
+    patterns: '*.yaml'
+  become: true
+  register: steam_gameserver_update_found
+
+- name: Read each registry entry
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ steam_gameserver_update_found.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  become: true
+  register: steam_gameserver_update_slurped
+
+- name: Load the registry entries
+  ansible.builtin.set_fact:
+    steam_gameserver_update_all: >-
+      {{ steam_gameserver_update_slurped.results | map(attribute='content')
+         | map('b64decode') | map('from_yaml') | sort(attribute='name') | list }}
+
+- name: Select the instances to update
+  ansible.builtin.set_fact:
+    steam_gameserver_update_entries: >-
+      {{ steam_gameserver_update_all
+         if (steam_instance | default('')) == ''
+         else steam_gameserver_update_all | selectattr('name', 'equalto', steam_instance) | list }}
+
+- name: Assert there is something to update
+  ansible.builtin.assert:
+    that: steam_gameserver_update_entries | length > 0
+    fail_msg: >-
+      {{ 'No instance named "' ~ steam_instance ~ '" is registered on this host. Registered: '
+         ~ (steam_gameserver_update_all | map(attribute='name') | join(', ') or 'none')
+         if (steam_instance | default('')) != ''
+         else 'No instances are registered on this host (' ~ steam_registry_dir ~ ' is empty or missing). Deploy one with create-steam_gameserver.yaml first.' }}
+    quiet: true
+
+- name: Collect instances whose declared branch differs from the installed one
+  ansible.builtin.set_fact:
+    steam_gameserver_update_branch_changes: >-
+      {{ steam_gameserver_update_branch_changes | default([])
+         + [item.name ~ ': ' ~ item.applied_branch | default('public') ~ ' -> ' ~ item.branch] }}
+  loop: "{{ steam_gameserver_update_entries }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.branch != (item.applied_branch | default('public'))
+
+- name: Refuse unconfirmed branch changes before touching anything
+  ansible.builtin.assert:
+    that: >-
+      (steam_gameserver_update_branch_changes | default([]) | length == 0)
+      or (confirm_branch_change | default(false) | bool)
+    fail_msg: |-
+      Beta-branch change(s) requested, and nothing has been stopped or changed yet:
+        {{ steam_gameserver_update_branch_changes | default([]) | join('\n  ') }}
+
+      Switching branches can leave game data (world saves, configs) in a format the
+      other branch cannot read, so moving BACK to the old branch may not restore it.
+      Take a VM backup first (create-steam_linux_backup.yaml), or at least copy each
+      instance's data_dir (recorded in its registry entry under {{ steam_registry_dir }}),
+      then re-run with -e confirm_branch_change=true to proceed.
+    quiet: true
+
+- name: Update each selected instance
+  ansible.builtin.include_tasks: instance.yaml
+  loop: "{{ steam_gameserver_update_entries }}"
+  loop_control:
+    loop_var: entry
+    label: "{{ entry.name }}"
+
+- name: Summary
+  ansible.builtin.debug:
+    msg: |-
+      ============================================
+      Updated on {{ ansible_host | default(inventory_hostname) }} (all left STOPPED):
+      {% for r in steam_gameserver_update_results %}
+        {{ r.name }}: {{ r.branch }}, build {{ r.before or 'none' }} -> {{ r.after }}{{ '  (new build)' if r.before != r.after else '  (already current)' }}
+      {% endfor %}
+
+      Start when ready:
+      {% for r in steam_gameserver_update_results %}
+        sudo systemctl start steam-{{ r.name }}
+      {% endfor %}
+      ============================================

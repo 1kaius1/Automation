@@ -1,9 +1,9 @@
 ---
 # ============================================
-# Create/update a Steam game-server instance
+# Create a Steam game-server instance
 # ============================================
 #
-# Deploys ONE game-server instance (installed/updated via SteamCMD, run as
+# Deploys ONE game-server instance (installed via SteamCMD, run as
 # its own systemd unit) onto an ALREADY-PROVISIONED Steam-Linux host —
 # create-steam_linux.yaml must have been run first, and this playbook
 # targets whichever host(s) that run persisted into inventory/host_vars/
@@ -14,6 +14,13 @@
 #
 #   ansible-playbook create-steam_gameserver.yaml \
 #     -e @gameservers/hlds-dm01.vars.yaml
+#
+# INSTALL-ONLY for the Steam app itself: SteamCMD runs only on an instance's
+# first install. Upgrades and beta-branch changes to an installed instance
+# are update-steam_gameserver.yaml's job (it stops the server first); this
+# playbook just declares the instance (and its beta branch) in the host's
+# registry. Pass --skip-tags start,verify to deploy/register an instance
+# while leaving it stopped.
 #
 # Unlike create-steam_linux.yaml, this playbook makes NO Proxmox API calls
 # at all — it's pure SSH/systemd automation against an already-reachable
@@ -58,3 +65,4 @@
     - name: Verify the instance is up
       ansible.builtin.include_role:
         name: steam_gameserver_verify
+      tags: verify

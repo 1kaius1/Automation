@@ -1,0 +1,27 @@
+---
+# Reads the installed build id of steam_gameserver_instance_appid from its
+# appmanifest. Sets steam_gameserver_instance_buildid ('' when the app is
+# not installed yet) and steam_gameserver_instance_manifest.stat.exists.
+# Included by main.yaml and app_update.yaml; needs
+# steam_gameserver_instance_install_dir already set.
+
+- name: Look for the app's manifest
+  ansible.builtin.stat:
+    path: "{{ steam_gameserver_instance_install_dir }}/steamapps/appmanifest_{{ steam_gameserver_instance_appid }}.acf"
+  become: true
+  register: steam_gameserver_instance_manifest
+
+- name: Read the app's manifest
+  ansible.builtin.slurp:
+    src: "{{ steam_gameserver_instance_manifest.stat.path }}"
+  become: true
+  register: steam_gameserver_instance_manifest_content
+  when: steam_gameserver_instance_manifest.stat.exists
+
+- name: Extract the installed build id
+  ansible.builtin.set_fact:
+    steam_gameserver_instance_buildid: >-
+      {{ (steam_gameserver_instance_manifest_content.content | b64decode
+          | regex_findall(steam_gameserver_instance_buildid_regex)
+          | first | default(''))
+         if steam_gameserver_instance_manifest.stat.exists else '' }}
