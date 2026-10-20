@@ -1,0 +1,64 @@
+---
+# Installs/updates the app via SteamCMD on the configured beta branch and
+# reports honestly whether a new build was pulled. Used by main.yaml (first
+# install) and by roles/steam_gameserver_update (upgrades).
+#
+# Does NOT stop or start the service — quiescing the server first is the
+# caller's job (steam_gameserver_update stops it; a first install has
+# nothing running yet).
+#
+# Needs steam_gameserver_instance_{name,appid} set. Sets
+# steam_gameserver_instance_{install_dir,buildid_before,buildid,updated}.
+
+- name: Compute this instance's install directory
+  ansible.builtin.set_fact:
+    steam_gameserver_instance_install_dir: "{{ steam_home_dir }}/{{ steam_gameserver_instance_name }}"
+
+- name: Read the build id before updating
+  ansible.builtin.include_tasks: read_buildid.yaml
+
+- name: Remember the build id before updating
+  ansible.builtin.set_fact:
+    steam_gameserver_instance_buildid_before: "{{ steam_gameserver_instance_buildid }}"
+
+- name: Install/update the app via SteamCMD
+  # -beta is ALWAYS passed (defaulting to "public"): SteamCMD keeps the last
+  # branch it was given, so omitting the flag would leave an instance stuck
+  # on a beta after the var is removed. changed_when: false because stdout
+  # can't be parsed reliably; the build-id comparison below reports the
+  # real change instead.
+  ansible.builtin.command:
+    argv: >-
+      {{ [steamcmd_install_dir ~ '/steamcmd.sh',
+          '+force_install_dir', steam_gameserver_instance_install_dir,
+          '+login', 'anonymous',
+          '+app_update', steam_gameserver_instance_appid | string,
+          '-beta', steam_gameserver_instance_beta_branch]
+         + (['-betapassword', steam_gameserver_instance_beta_password]
+            if steam_gameserver_instance_beta_password | length > 0 else [])
+         + (['validate'] if steam_gameserver_instance_validate else [])
+         + ['+quit'] }}
+  become: true
+  become_user: "{{ steam_system_user }}"
+  changed_when: false
+
+- name: Read the build id after updating
+  ansible.builtin.include_tasks: read_buildid.yaml
+
+- name: Confirm SteamCMD actually installed the app
+  ansible.builtin.assert:
+    that: steam_gameserver_instance_buildid | length > 0
+    fail_msg: >-
+      SteamCMD finished but no appmanifest_{{ steam_gameserver_instance_appid }}.acf
+      with a build id exists under {{ steam_gameserver_instance_install_dir }}/steamapps —
+      check the branch name ({{ steam_gameserver_instance_beta_branch }}), its
+      password, and the SteamCMD output above.
+    quiet: true
+
+- name: Report whether a new build was pulled
+  # set_fact normally never reports changed; changed_when makes a new build
+  # show as changed and an already-current app as ok, so a second run
+  # honestly reports changed=0.
+  ansible.builtin.set_fact:
+    steam_gameserver_instance_updated: "{{ steam_gameserver_instance_buildid != steam_gameserver_instance_buildid_before }}"
+  changed_when: steam_gameserver_instance_buildid != steam_gameserver_instance_buildid_before

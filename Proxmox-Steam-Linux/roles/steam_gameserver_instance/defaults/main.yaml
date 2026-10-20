@@ -12,3 +12,27 @@ steam_gameserver_instance_source_cidr: "0.0.0.0/0"
 steam_gameserver_instance_extra_ports: []
 steam_gameserver_instance_extra_protocols: []
 steam_gameserver_instance_env: {}
+
+# Which Steam beta branch to track. "public" is the default (non-beta)
+# branch. SteamCMD remembers a branch once set — omitting -beta later does
+# NOT revert it — so the branch is always passed explicitly, which makes
+# this var the single source of truth. Branch changes are applied by
+# update-steam_gameserver.yaml, never silently (see README.md "Updating
+# game servers"). The password is only needed for password-protected
+# branches.
+steam_gameserver_instance_beta_branch: public
+steam_gameserver_instance_beta_password: ""
+
+# Pulls the build id out of an appmanifest_<appid>.acf (Valve KeyValues
+# text format).
+steam_gameserver_instance_buildid_regex: '"buildid"\s+"(\d+)"'
+
+# Where this instance's GAME DATA lives (world saves, player data, admin/ban
+# lists, logs — anything the game writes that isn't the SteamCMD-managed
+# install). Always under the instance's own directory so it is found,
+# backed up, and removed with the instance — never in the steam user's
+# $HOME (e.g. ~/.config), which every instance on the host would share.
+# The role creates it; each game's vars file points the game at it (Valheim:
+# -savedir). SteamCMD's validate only checks depot files, so data here
+# survives updates.
+steam_gameserver_instance_data_dir: "{{ steam_home_dir }}/{{ steam_gameserver_instance_name }}/data"

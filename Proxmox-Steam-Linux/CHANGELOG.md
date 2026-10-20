@@ -4,6 +4,21 @@ All notable changes to `Proxmox-Steam-Linux/` are documented here. Format based 
 
 ## [Unreleased]
 
+### Added
+
+- **`update-steam_gameserver.yaml` — upgrade every game-server instance on a host, with optional beta-branch control.** For each instance in the host's registry it stops the service, runs SteamCMD, and leaves the server stopped (the operator starts it with `systemctl start steam-<instance-name>`). `-e steam_instance=<name>` narrows it to one instance. New role `steam_gameserver_update`. See `README.md` "Updating game servers".
+- **Per-host instance registry**: `/opt/data/steam/.registry/<instance-name>.yaml`, one file per instance, written by `create-steam_gameserver.yaml` (new `steam_registry_dir` in `inventory/group_vars/all/vars.yaml`). Records the declared beta branch/password and the installed branch/build id. One file per instance rather than a single CSV: written atomically with `copy`, no row-editing or quoting problems, and a future `delete-` is just removing a file. Discovering instances from `appmanifest_*.acf` files instead wouldn't work — HLDS alone installs three manifests (apps 10, 70, 90).
+- **Beta-branch support**: `steam_gameserver_instance_beta_branch` (default `public`) and `steam_gameserver_instance_beta_password` instance vars. `-beta` is always passed to `app_update` because SteamCMD remembers the last branch given — omitting it would leave an instance stuck on a beta.
+- **Branch changes require confirmation, for every game.** If an instance's declared branch differs from the installed one, `update-steam_gameserver.yaml` fails before stopping or changing anything unless `-e confirm_branch_change=true` is passed, warning that switching branches can leave game data (e.g. world saves) unreadable by the other branch and pointing at `create-steam_linux_backup.yaml`.
+- `tags: start` on the instance's final start task and `tags: verify` on the verify step, so an instance can be deployed/registered while left stopped: `--skip-tags start,verify`.
+
+- **`steam_gameserver_instance_data_dir`** (default `<install dir>/data`): where an instance's game data (saves, admin/ban lists, ...) lives — always under the instance's own directory, never the steam user's shared `$HOME`/`~/.config`. The role creates it; each game's vars file points the game at it (Valheim: `-savedir "{{ steam_gameserver_instance_data_dir }}"`). Recorded in the registry as `data_dir` so it is clear what to back up before a branch switch.
+
+### Changed
+
+- **`create-steam_gameserver.yaml` is now install-only for the Steam app.** SteamCMD runs only on an instance's first install; an installed instance is never re-updated, so a re-run no longer replaces files under a running server and reports `changed=0`. **Behaviour change:** re-running it was previously the way to upgrade — use `update-steam_gameserver.yaml` instead. Instances deployed before the registry existed are assumed to be on `public` (no `-beta` flag could be passed before) and are registered by re-running `create-` for them.
+- SteamCMD's app update is now `roles/steam_gameserver_instance/tasks/app_update.yaml`, reporting `changed` from a real before/after build-id comparison instead of a blanket `changed_when: false`.
+
 ### Changed
 
 - **`README.md` "Known limitations / next steps" reframed: the two-phase design's actual goal — a real game, on a real server, verified with real players over the internet — is met, not just aspirational.** Valheim (`valheim-1`) ran a live session with 5 concurrent real players connecting from the internet; the server performed well. This is the real proof of the design, not the earlier systemd/`ss`/journal checks alone — those confirm the process is up and listening, not that it holds up under real gameplay. Also documents that this project was always meant as an interim/testing solution ahead of a more formal fleet-management layer for "Steam Engines" (Linux and, eventually, Windows) — not an end state in itself.
