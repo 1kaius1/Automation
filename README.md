@@ -22,6 +22,7 @@ Everything is built on **`Shared/Ansible/`**: a repo-local Ansible virtualenv, o
 | `Proxmox-Redis/` | Redis — cache / queue / session store; single node or cluster | stub |
 | `Proxmox-nginx/` | Shared reverse proxy **and** general web/app server (static, PHP-FPM, FastCGI) | stub |
 | `Proxmox-CA/` | The single certificate authority for the whole environment | stub |
+| `Proxmox-FreeIPA/` | FreeIPA — central accounts, groups and SSO for workstations and servers; its CA is subordinate to `Proxmox-CA` | stub |
 | `Proxmox-OpenVox/` | OpenVox (Puppet) + PuppetDB + Puppetboard — ongoing OS/app config management for the guests this repo provisions | stub |
 
 A **stub** is a directory with only a `README.md`: the design intent, not a working deployment.
