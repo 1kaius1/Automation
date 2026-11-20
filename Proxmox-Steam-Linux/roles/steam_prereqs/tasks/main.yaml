@@ -6,16 +6,16 @@
 # Base packages, i386 multiarch + 32-bit runtime libs (steamcmd and most
 # Source/GoldSrc dedicated servers are 32-bit binaries), the dedicated
 # service account, directory layout, and baseline firewall. Runs on the
-# freshly-created VM (hosts: steam_linux — see create-steam_linux.yaml).
+# freshly-created VM (hosts: steam_linux - see create-steam_linux.yaml).
 #
-# Deliberately opens NO game port here — no game-server instance exists
+# Deliberately opens NO game port here - no game-server instance exists
 # yet at this point. Each instance opens its own ufw rule when it's
 # created, in a separate run of create-steam_gameserver.yaml (see
 # roles/steam_gameserver_instance).
 # ============================================
 
 - name: Update apt cache
-  # No cache_valid_time — this role runs once per VM's lifetime, so
+  # No cache_valid_time - this role runs once per VM's lifetime, so
   # trusting a "recent enough" cache isn't worth the risk (Proxmox-Forgejo
   # observed this skip the real update on a brand-new VM).
   ansible.builtin.apt:
@@ -76,7 +76,7 @@
 
 - name: Pre-create the steam user's Ansible remote_tmp directory
   # Same become_user handoff fragility mitigation as Proxmox-Forgejo's
-  # forgejo_prereqs — later tasks/roles run as become_user: steam.
+  # forgejo_prereqs - later tasks/roles run as become_user: steam.
   ansible.builtin.file:
     path: "{{ steam_home_dir }}/.ansible/tmp"
     state: directory

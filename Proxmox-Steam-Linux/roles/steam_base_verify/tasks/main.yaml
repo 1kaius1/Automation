@@ -4,7 +4,7 @@
 # ============================================
 #
 # Confirms the base Steam-Linux host (create-steam_linux.yaml) is ready
-# to receive game-server instances. Does NOT check any specific game —
+# to receive game-server instances. Does NOT check any specific game -
 # that's steam_gameserver_verify's job, run separately by
 # create-steam_gameserver.yaml.
 # ============================================

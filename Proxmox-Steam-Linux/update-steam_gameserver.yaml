@@ -17,7 +17,7 @@
 # in its vars file, re-run create-steam_gameserver.yaml (records the new
 # declared branch; changes nothing on the install), then run this with
 # -e confirm_branch_change=true. Without that flag a branch change is
-# refused before anything is stopped — see README.md "Updating game servers".
+# refused before anything is stopped - see README.md "Updating game servers".
 #
 # Pure SSH/systemd/SteamCMD like create-steam_gameserver.yaml: no Proxmox
 # API calls. Re-runnable: instances already stopped and current report

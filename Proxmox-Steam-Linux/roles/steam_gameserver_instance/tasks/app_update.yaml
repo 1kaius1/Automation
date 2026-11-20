@@ -3,7 +3,7 @@
 # reports honestly whether a new build was pulled. Used by main.yaml (first
 # install) and by roles/steam_gameserver_update (upgrades).
 #
-# Does NOT stop or start the service — quiescing the server first is the
+# Does NOT stop or start the service - quiescing the server first is the
 # caller's job (steam_gameserver_update stops it; a first install has
 # nothing running yet).
 #
@@ -50,7 +50,7 @@
     that: steam_gameserver_instance_buildid | length > 0
     fail_msg: >-
       SteamCMD finished but no appmanifest_{{ steam_gameserver_instance_appid }}.acf
-      with a build id exists under {{ steam_gameserver_instance_install_dir }}/steamapps —
+      with a build id exists under {{ steam_gameserver_instance_install_dir }}/steamapps -
       check the branch name ({{ steam_gameserver_instance_beta_branch }}), its
       password, and the SteamCMD output above.
     quiet: true

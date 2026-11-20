@@ -1,5 +1,5 @@
 ---
-# One registry entry (loop_var: entry) — see main.yaml.
+# One registry entry (loop_var: entry) - see main.yaml.
 
 - name: "Update {{ entry.name }}"
   vars:

@@ -5,19 +5,19 @@
 #
 # Installs/updates ONE game-server instance via SteamCMD and runs it as
 # its own systemd unit. Deliberately contains NO game-specific knowledge
-# — every value comes from steam_gameserver_instance_* vars, normally
+# - every value comes from steam_gameserver_instance_* vars, normally
 # supplied via -e @<instance vars file> (see gameservers/hlds-dm01.vars.yaml
 # for a real invocation). Game-specific config (server.cfg, mapcycle.txt, ...)
 # is layered on top by a separate <game>_config role, included dynamically
-# by create-steam_gameserver.yaml — see roles/hlds_dm_config for the
+# by create-steam_gameserver.yaml - see roles/hlds_dm_config for the
 # pattern every future game's own config role would follow.
 #
-# This is the reusable "install this AppID on this host" building block —
+# This is the reusable "install this AppID on this host" building block -
 # see README.md "Known limitations / next steps" for how this generalizes
 # into a data-driven, multi-instance mechanism.
 #
 # INSTALL-ONLY: SteamCMD runs here only when the app is not installed yet.
-# An already-installed instance is never re-updated by this role — upgrades
+# An already-installed instance is never re-updated by this role - upgrades
 # and beta-branch changes belong to update-steam_gameserver.yaml (role
 # steam_gameserver_update), which stops the server first. That keeps this
 # role idempotent (a re-run never bounces a healthy server). See README.md
@@ -34,7 +34,7 @@
       - steam_gameserver_instance_port is defined
     fail_msg: >-
       steam_gameserver_instance_{name,appid,launch_binary,launch_args,port}
-      must all be set — pass an instance vars file with -e @<path>, e.g.
+      must all be set - pass an instance vars file with -e @<path>, e.g.
       gameservers/hlds-dm01.vars.yaml.
     quiet: true
 
@@ -80,7 +80,7 @@
   failed_when: false
 
 - name: Remember whether this is a first install
-  # Captured before app_update.yaml runs — it re-reads the manifest, so
+  # Captured before app_update.yaml runs - it re-reads the manifest, so
   # manifest.stat.exists is always true afterwards.
   ansible.builtin.set_fact:
     steam_gameserver_instance_fresh_install: "{{ (not steam_gameserver_instance_manifest.stat.exists) | bool }}"
@@ -93,7 +93,7 @@
   # First install: the declared branch (just installed). Already installed
   # and registered: whatever the registry recorded. Already installed but
   # not registered yet (instances deployed before the registry existed):
-  # "public" — before the registry, no -beta flag could be passed at all,
+  # "public" - before the registry, no -beta flag could be passed at all,
   # so a pre-registry install can only be on the default branch.
   ansible.builtin.set_fact:
     steam_gameserver_instance_applied_branch: >-
@@ -113,7 +113,7 @@
       {{ steam_gameserver_instance_name }}: declared branch
       "{{ steam_gameserver_instance_beta_branch }}" differs from the installed
       branch "{{ steam_gameserver_instance_applied_branch }}". Nothing was changed on the
-      install — apply it with update-steam_gameserver.yaml (see README.md
+      install - apply it with update-steam_gameserver.yaml (see README.md
       "Updating game servers" for the confirmation it requires).
   when: steam_gameserver_instance_beta_branch != steam_gameserver_instance_applied_branch
 
@@ -131,11 +131,11 @@
     - Restart steam gameserver instance
 
 - name: Allow this instance's game port(s)/protocol(s) through ufw
-  # Opens every (port, protocol) combination — steam_gameserver_instance_extra_ports
+  # Opens every (port, protocol) combination - steam_gameserver_instance_extra_ports
   # covers games needing more than one port (e.g. Valheim: base port + 2
   # more), steam_gameserver_instance_extra_protocols covers a port needing
   # more than one protocol (e.g. Valheim: TCP as well as UDP, per
-  # conflicting guidance on whether it's actually required — cheap to open
+  # conflicting guidance on whether it's actually required - cheap to open
   # both). Both empty by default, so a single-port/single-protocol game
   # like HLDS gets exactly the one rule it always did.
   community.general.ufw:

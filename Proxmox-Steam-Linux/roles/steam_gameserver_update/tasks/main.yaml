@@ -8,7 +8,7 @@
 # branch and the latest build on it:
 #
 #   1. read the registry (narrowed to one instance with -e steam_instance=<name>)
-#   2. refuse — before touching anything — if any instance's declared branch
+#   2. refuse - before touching anything - if any instance's declared branch
 #      differs from the installed one and the change isn't confirmed
 #   3. per instance: stop the service, run SteamCMD, update the registry
 #

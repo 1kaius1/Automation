@@ -5,10 +5,10 @@
 #
 # Mirrors Proxmox-Forgejo's backup_forgejo.yaml. Simpler default:
 # register steam_vm_vmid in Proxmox's own Datacenter -> Backup scheduled
-# job instead — no Ansible required for that path at all.
+# job instead - no Ansible required for that path at all.
 #
 # Backs up the VM as a whole (base host + every game-server instance under
-# /opt/data/steam/) — there's no per-instance backup here.
+# /opt/data/steam/) - there's no per-instance backup here.
 #
 # Usage:
 #   ansible-playbook create-steam_linux_backup.yaml -e steam_vm_vmid=<vmid>

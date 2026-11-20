@@ -3,7 +3,7 @@
 # create-steam_gameserver.yaml deploys exactly one instance per run. A
 # future loop-driven multi-instance version (see README.md "Known
 # limitations / next steps") would need an ansible.builtin.meta:
-# flush_handlers between loop iterations, or per-instance handler names —
+# flush_handlers between loop iterations, or per-instance handler names -
 # not solved here.
 
 - name: Reload systemd
@@ -13,8 +13,8 @@
 
 - name: Check whether the steam gameserver instance is running
   # A restart is only wanted for an instance that is already up. An
-  # instance that is stopped — on purpose, e.g. taken down for maintenance
-  # or an update — must stay stopped: state: restarted would START it.
+  # instance that is stopped - on purpose, e.g. taken down for maintenance
+  # or an update - must stay stopped: state: restarted would START it.
   # "Ensure the instance is enabled and started" in tasks/main.yaml is what
   # starts a stopped instance (skip it with --skip-tags start).
   ansible.builtin.command: "systemctl is-active steam-{{ steam_gameserver_instance_name }}"

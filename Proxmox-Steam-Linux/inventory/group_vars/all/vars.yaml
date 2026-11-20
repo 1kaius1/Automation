@@ -10,5 +10,5 @@ ansible_python_interpreter: /usr/bin/python3
 # host: one <instance-name>.yaml per instance, written by
 # create-steam_gameserver.yaml and read by update-steam_gameserver.yaml.
 # Lives on the HOST (on the /opt disk, so the whole-VM backup covers it),
-# not on the control node — see README.md "Updating game servers".
+# not on the control node - see README.md "Updating game servers".
 steam_registry_dir: "{{ steam_home_dir }}/.registry"

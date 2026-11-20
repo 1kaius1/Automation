@@ -5,10 +5,10 @@
 #   - create-steam_gameserver.yaml  (per-instance install, separate run)
 #
 # EDIT EVERY "REPLACE_ME" VALUE BELOW BEFORE FIRST RUN. No vault.yaml
-# exists yet in this project — anonymous SteamCMD login (used by every
+# exists yet in this project - anonymous SteamCMD login (used by every
 # instance definition under gameservers/ today) needs no secret. A future
 # game requiring a real, entitled Steam account reintroduces vaulted
-# credentials — see README.md "Known limitations / next steps".
+# credentials - see README.md "Known limitations / next steps".
 
 steam_linux_hostname: "steam-linux"
 
@@ -16,7 +16,7 @@ steam_linux_hostname: "steam-linux"
 # Proxmox's cloud-init integration). Deliberately not root.
 steam_deploy_user: "steam-deploy"
 
-# System user/directory layout used by roles in BOTH playbooks — kept
+# System user/directory layout used by roles in BOTH playbooks - kept
 # here rather than in role defaults, since create-steam_linux.yaml and
 # create-steam_gameserver.yaml are separate ansible-playbook invocations
 # that must still agree on the same values.
@@ -28,14 +28,14 @@ steamcmd_install_dir: "/opt/app/steamcmd"
 # VM sizing
 steam_cores: 2
 steam_memory: 4096
-steam_disk_size: 20        # scsi0 (/) — GB, no game data lives here
-steam_opt_disk_size: 60    # scsi1 (/opt) — GB, headroom for multiple future instances
+steam_disk_size: 20        # scsi0 (/) - GB, no game data lives here
+steam_opt_disk_size: 60    # scsi1 (/opt) - GB, headroom for multiple future instances
 
 # Network bridge to attach guest NICs to. The shared template is built on
 # the build VLAN, so create_steam_vm re-points the clone's net0 at this
-# bridge — set it to the bridge THIS project's VMs actually live on.
+# bridge - set it to the bridge THIS project's VMs actually live on.
 # Deliberately per-project, not in the shared
-# ../Shared/Ansible/group_vars/proxmox_pve1/vars.yaml — a game-server host
+# ../Shared/Ansible/group_vars/proxmox_pve1/vars.yaml - a game-server host
 # needs a directly-reachable bridge/subnet (no reverse proxy in front of
 # it, see README.md), which can easily differ from an internal-only app
 # like Forgejo, and this project may end up running several Steam-Linux

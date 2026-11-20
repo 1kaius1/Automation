@@ -5,7 +5,7 @@
 #
 # Triggers a vzdump of the Steam-Linux VM to backup_storage_target, which
 # is expected to be OFF-NODE storage (Proxmox Backup Server, or an
-# NFS/CIFS share) — a same-node backup does not survive that node's
+# NFS/CIFS share) - a same-node backup does not survive that node's
 # hardware failure. See the Disaster Recovery section of README.md.
 #
 # This backs up the VM as a whole (base host + every instance under

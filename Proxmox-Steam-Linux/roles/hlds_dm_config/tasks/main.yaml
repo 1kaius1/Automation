@@ -3,15 +3,15 @@
 # HLDS Deathmatch Config
 # ============================================
 #
-# HLDS-specific — layers server.cfg/mapcycle.txt on top of an instance
+# HLDS-specific - layers server.cfg/mapcycle.txt on top of an instance
 # already installed by steam_gameserver_instance (must run first in the
-# same play — see create-steam_gameserver.yaml). Every future distinct
+# same play - see create-steam_gameserver.yaml). Every future distinct
 # game gets its own small <game>_config role following this same shape;
 # steam_gameserver_instance itself stays generic (see README.md "Known
 # limitations / next steps").
 #
 # IMPORTANT: both files live under the mod directory (valve/ for stock
-# Half-Life), not the install root — hlds_run's default +exec server.cfg
+# Half-Life), not the install root - hlds_run's default +exec server.cfg
 # and mp_mapcyclefile are resolved relative to there.
 # ============================================
 

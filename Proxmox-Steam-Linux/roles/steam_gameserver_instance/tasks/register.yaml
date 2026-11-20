@@ -1,14 +1,14 @@
 ---
 # Writes this instance's entry in the host's registry
 # ({{ steam_registry_dir }}/<name>.yaml). One file per instance, written
-# atomically — only changed when its content changes.
+# atomically - only changed when its content changes.
 #
 # "branch"/"branch_password" are the DECLARED branch (from the instance
 # vars file, via create-steam_gameserver.yaml); "applied_*" is what is
 # actually installed (set when an install/update runs). update-steam_gameserver.yaml
 # reconciles the two.
 #
-# "data_dir" is where the game keeps its saves — what to back up before a
+# "data_dir" is where the game keeps its saves - what to back up before a
 # branch switch.
 #
 # Needs steam_gameserver_instance_{name,appid,beta_branch,beta_password,
