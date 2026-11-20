@@ -1,6 +1,6 @@
 # Proxmox-nginx
 
-> **Stub** — only this README exists. Design intent, not a working deployment.
+> **Stub** - only this README exists. Design intent, not a working deployment.
 
 Ansible deployment of a standalone nginx server onto a Proxmox VM, on the same foundation as `Proxmox-Forgejo`:
 
@@ -11,8 +11,8 @@ Ansible deployment of a standalone nginx server onto a Proxmox VM, on the same f
 
 Two roles on one server:
 
-- **Shared reverse proxy** — TLS termination and routing for the app projects that run their own application server (Gunicorn, Passenger, a Node process, …). See e.g. [`../Proxmox-Forgejo/docs/reverse-proxy.nginx.conf.example`](../Proxmox-Forgejo/docs/reverse-proxy.nginx.conf.example), a hand-off to this project.
-- **General web / application server** — for everything nginx serves directly and that doesn't need a separate app-server process: static sites, PHP (via PHP-FPM), and other FastCGI/CGI languages.
+- **Shared reverse proxy** - TLS termination and routing for the app projects that run their own application server (Gunicorn, Passenger, a Node process, ...). See e.g. [`../Proxmox-Forgejo/docs/reverse-proxy.nginx.conf.example`](../Proxmox-Forgejo/docs/reverse-proxy.nginx.conf.example), a hand-off to this project.
+- **General web / application server** - for everything nginx serves directly and that doesn't need a separate app-server process: static sites, PHP (via PHP-FPM), and other FastCGI/CGI languages.
 
 ## Planned
 

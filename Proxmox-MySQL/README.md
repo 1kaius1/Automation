@@ -1,6 +1,6 @@
 # Proxmox-MySQL
 
-> **Stub** — only this README exists. Design intent, not a working deployment.
+> **Stub** - only this README exists. Design intent, not a working deployment.
 
 Ansible deployment of an Oracle MySQL server onto a Proxmox VM, on the same foundation as `Proxmox-Forgejo`:
 

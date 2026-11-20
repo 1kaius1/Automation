@@ -1,6 +1,6 @@
 # Proxmox-Redis
 
-> **Stub** — only this README exists. Design intent, not a working deployment.
+> **Stub** - only this README exists. Design intent, not a working deployment.
 
 Ansible deployment of Redis onto a Proxmox VM, on the same foundation as `Proxmox-Forgejo`:
 
@@ -13,6 +13,6 @@ Cache, queue, and session store for the application projects.
 
 ## Planned
 
-- Single node, with an optional replicated setup — Sentinel or Cluster mode (TBD)
+- Single node, with an optional replicated setup - Sentinel or Cluster mode (TBD)
 - Per-app keyspace / ACL conventions
 - Persistence (RDB + AOF) and a backup policy
