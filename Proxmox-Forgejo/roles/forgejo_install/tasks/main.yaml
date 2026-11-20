@@ -3,7 +3,7 @@
 # Forgejo Install
 # ============================================
 #
-# Checksum-verified binary download (fails closed on mismatch — no
+# Checksum-verified binary download (fails closed on mismatch - no
 # unverified binary is ever installed), rendered config/unit from
 # templates (no inline copy: content: blocks), then an idempotent
 # first-admin bootstrap.

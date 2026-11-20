@@ -1,21 +1,21 @@
 ---
 # Forgejo deployment settings. EDIT EVERY "REPLACE_ME" VALUE BELOW BEFORE
 # FIRST RUN. Secrets referenced here (the {{ vault_* }} lines) are defined
-# in the sibling vault.yaml — see vault.yaml.example and
+# in the sibling vault.yaml - see vault.yaml.example and
 # Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md.
 
 forgejo_hostname: "forgejo"
 
 # Non-root cloud-init account Ansible connects as (gets NOPASSWD sudo via
-# Proxmox's cloud-init integration). Deliberately not root — matches the
+# Proxmox's cloud-init integration). Deliberately not root - matches the
 # "no VM root password, SSH-key-only" secret-footprint decision in README.md.
 forgejo_deploy_user: "forgejo-deploy"
 
 # Externally-facing domain, fronted by your existing shared reverse proxy.
-# TLS terminates there, not on this VM — see README.md.
+# TLS terminates there, not on this VM - see README.md.
 forgejo_domain: "REPLACE_ME.example.home"
 
-# Pin a specific release rather than tracking "latest" — check
+# Pin a specific release rather than tracking "latest" - check
 # https://codeberg.org/forgejo/forgejo/releases for the current stable
 # version before first deploy, and bump this deliberately when you want
 # to upgrade.
@@ -42,7 +42,7 @@ forgejo_nameservers: ""
 # Optional DNS search domain(s).
 forgejo_searchdomains: ""
 
-# HTTP port Forgejo listens on (proxied by your shared reverse proxy —
+# HTTP port Forgejo listens on (proxied by your shared reverse proxy -
 # never exposed directly to the internet).
 forgejo_http_port: 3000
 
@@ -55,12 +55,12 @@ forgejo_ssh_port: 2222
 # The git-over-SSH port CLIENTS connect to on the reverse proxy, and the
 # port Forgejo advertises in clone URLs (ssh://git@<domain>:<port>/...).
 # Leave equal to forgejo_ssh_port when there's no SSH proxy; set it to the
-# proxy's `stream {}` listen port when there is — see
+# proxy's `stream {}` listen port when there is - see
 # docs/reverse-proxy.nginx.conf.example. A high, non-standard port (e.g.
 # 10000) keeps Forgejo's git-SSH off the ports mass scanners hammer.
 forgejo_ssh_public_port: 2222
 
-# CIDR of your shared reverse proxy — ufw restricts inbound
+# CIDR of your shared reverse proxy - ufw restricts inbound
 # forgejo_http_port to only this source, never the world.
 reverse_proxy_source_cidr: "REPLACE_ME.0.0.0/32"
 

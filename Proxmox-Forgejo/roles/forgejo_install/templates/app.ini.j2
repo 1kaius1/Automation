@@ -1,4 +1,4 @@
-; Managed by Ansible (roles/forgejo_install) — do not edit by hand, changes
+; Managed by Ansible (roles/forgejo_install) - do not edit by hand, changes
 ; will be overwritten on the next deploy. Edit inventory/group_vars/forgejo
 ; instead.
 
@@ -9,7 +9,7 @@ WORK_PATH = {{ forgejo_data_dir }}
 
 [server]
 DOMAIN           = {{ forgejo_domain }}
-; ROOT_URL is the externally-facing address — TLS terminates at the
+; ROOT_URL is the externally-facing address - TLS terminates at the
 ; shared reverse proxy in front of this VM, not here. See README.md.
 ROOT_URL         = https://{{ forgejo_domain }}/
 HTTP_ADDR        = 0.0.0.0

@@ -6,7 +6,7 @@
 
 collections:
   # Proxmox VM/backup/info modules. NOT community.general.proxmox, which
-  # is deprecated — see the mono-repo root plan notes for why
+  # is deprecated - see the mono-repo root plan notes for why
   # Proxmox-NextCloud still uses the old module and shouldn't be copied.
   - name: community.proxmox
     version: ">=1.5.0"

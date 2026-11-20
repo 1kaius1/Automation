@@ -1,4 +1,4 @@
-# Forgejo reverse-proxy — worked nginx example
+# Forgejo reverse-proxy - worked nginx example
 # ============================================
 # This project does NOT manage a reverse proxy (see README.md "Reverse
 # proxy"). This file is a reference for the shared proxy that fronts
@@ -22,7 +22,7 @@
 # SSH_PORT in sync.
 
 
-# ── http{} context ──────────────────────────────────────────────────────
+# -- http{} context ------------------------------------------------------
 # Put this map once, in http{} (e.g. /etc/nginx/conf.d/00-upgrade-map.conf).
 map $http_upgrade $connection_upgrade {
     default upgrade;
@@ -30,7 +30,7 @@ map $http_upgrade $connection_upgrade {
 }
 
 
-# ── http{} context ──────────────────────────────────────────────────────
+# -- http{} context ------------------------------------------------------
 upstream forgejo_web {
     server FORGEJO_VM_IP:3000;      # forgejo_http_port on the Forgejo VM
     keepalive 32;
@@ -88,8 +88,8 @@ server {
 }
 
 
-# ── stream{} context ────────────────────────────────────────────────────
-# TOP-LEVEL — a sibling of http{}, never inside it. Put it at the bottom
+# -- stream{} context ----------------------------------------------------
+# TOP-LEVEL - a sibling of http{}, never inside it. Put it at the bottom
 # of /etc/nginx/nginx.conf, or in /etc/nginx/stream.d/forgejo-ssh.conf if
 # nginx.conf has `stream { include /etc/nginx/stream.d/*.conf; }`.
 # Needs the stream module: `nginx -V 2>&1 | tr ' ' '\n' | grep stream`
@@ -97,11 +97,11 @@ server {
 #  as the first line of nginx.conf).
 stream {
     upstream forgejo_ssh {
-        server FORGEJO_VM_IP:2222;    # forgejo_ssh_port — Forgejo's git-SSH server in the VM
+        server FORGEJO_VM_IP:2222;    # forgejo_ssh_port - Forgejo's git-SSH server in the VM
     }
 
     server {
-        listen 10000;                # forgejo_ssh_public_port — what git clients connect to
+        listen 10000;                # forgejo_ssh_public_port - what git clients connect to
         listen [::]:10000;
         proxy_pass forgejo_ssh;
 

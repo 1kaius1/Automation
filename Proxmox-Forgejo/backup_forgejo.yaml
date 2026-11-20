@@ -3,7 +3,7 @@
 # Backup Forgejo (on-demand)
 # ============================================
 #
-# Standalone wrapper for the forgejo_backup role — usable from cron/a
+# Standalone wrapper for the forgejo_backup role - usable from cron/a
 # systemd timer, or run by hand. See the Disaster Recovery section of
 # README.md for why backup_storage_target must be off-node storage, and
 # for the simpler alternative (a native Proxmox Datacenter -> Backup job)

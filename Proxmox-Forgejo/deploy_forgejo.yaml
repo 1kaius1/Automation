@@ -3,12 +3,12 @@
 # Deploy Forgejo
 # ============================================
 #
-# Non-interactive by design — no vars_prompt/pause on this path. Fill in
+# Non-interactive by design - no vars_prompt/pause on this path. Fill in
 # every REPLACE_ME in inventory/group_vars/ and create the two vault.yaml
 # files (see Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md and Shared/Ansible/README.md)
 # before running this.
 #
-# This project does NOT build its own VM template — vm_template_name/
+# This project does NOT build its own VM template - vm_template_name/
 # vm_template_vmid must already exist, built with
 # ../Shared/Ansible/create-template-linux.yaml (shared across every project in
 # this mono-repo, not Forgejo-specific). proxmox_preflight fails clearly
@@ -61,7 +61,7 @@
   hosts: forgejo
   gather_facts: true
   vars:
-    # create_forgejo_vm cached these on localhost with cacheable: yes —
+    # create_forgejo_vm cached these on localhost with cacheable: yes -
     # pull them back in for use in this play (same pattern
     # Proxmox-NextCloud uses across its own plays).
     forgejo_vm_ip: "{{ hostvars['localhost']['forgejo_vm_ip'] }}"

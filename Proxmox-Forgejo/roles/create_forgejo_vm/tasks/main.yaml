@@ -7,7 +7,7 @@
 # applies cloud-init settings, resizes the disk, starts it, resolves its
 # IP (static or via the QEMU guest agent for DHCP), waits for SSH, then
 # add_hosts it into the [forgejo] group for the next play. Auth is
-# inherited from the play's module_defaults — see deploy_forgejo.yaml.
+# inherited from the play's module_defaults - see deploy_forgejo.yaml.
 # ============================================
 
 - name: Get next available VMID from the API
@@ -60,7 +60,7 @@
 
 - name: Apply cloud-init settings, network and sizing to the clone
   # The template is built on the shared build VLAN, so its net0 points at
-  # that bridge — every consuming project MUST re-point net0 at its own
+  # that bridge - every consuming project MUST re-point net0 at its own
   # bridge here (changing net requires update_unsafe). nameservers is
   # required with a static forgejo_ip_config (no DHCP to supply a
   # resolver); ciupgrade is disabled because forgejo_prereqs runs its own
@@ -85,7 +85,7 @@
 
 - name: Resize the cloned disk to forgejo_disk_size
   # A bare number (e.g. "20") is NOT interpreted as GiB here despite
-  # forgejo_disk_size being documented in GB — the underlying Proxmox
+  # forgejo_disk_size being documented in GB - the underlying Proxmox
   # resize API needs an explicit unit suffix, or it treats the value as
   # a tiny absolute size and fails with "shrinking disks is not
   # supported" against any real template disk.
@@ -108,7 +108,7 @@
 
 - name: Use the static IP directly, if configured
   # forgejo_ip_config is stored WITHOUT the "ip=" prefix (e.g.
-  # "192.168.1.50/24,gw=192.168.1.1") — the prefix is only prepended when
+  # "192.168.1.50/24,gw=192.168.1.1") - the prefix is only prepended when
   # building ipconfig0 above.
   ansible.builtin.set_fact:
     forgejo_vm_ip: "{{ forgejo_ip_config.split(',')[0].split('/')[0] }}"
@@ -147,7 +147,7 @@
 
 - name: Fail if no IP address was resolved
   ansible.builtin.fail:
-    msg: "Could not determine the VM's IP address — check its network config in Proxmox."
+    msg: "Could not determine the VM's IP address - check its network config in Proxmox."
   when: forgejo_vm_ip is not defined or forgejo_vm_ip == ""
 
 - name: Wait for SSH to become available

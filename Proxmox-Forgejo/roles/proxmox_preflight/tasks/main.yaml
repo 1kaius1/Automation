@@ -4,9 +4,9 @@
 # ============================================
 #
 # Validates the cluster/target node before anything gets created, using
-# real API-backed _info modules — not the ssh|grep string-shelling
+# real API-backed _info modules - not the ssh|grep string-shelling
 # Proxmox-NextCloud's preflight does. Authentication is inherited from the
-# play's module_defaults (group/community.proxmox.proxmox) — see
+# play's module_defaults (group/community.proxmox.proxmox) - see
 # deploy_forgejo.yaml.
 #
 # Fails fast with a clear message on any problem, rather than discovering
@@ -55,7 +55,7 @@
     msg: |
       backup_storage_target '{{ backup_storage_target }}' was not found.
       This is expected to be an OFF-NODE storage target (Proxmox Backup
-      Server, or an NFS/CIFS share) — see the Disaster Recovery section of
+      Server, or an NFS/CIFS share) - see the Disaster Recovery section of
       README.md. If you haven't set that storage up in Proxmox yet, set
       backup_storage_target to "none" to explicitly defer this (see the
       comment above it in vars.yaml), or the "shift to another node after
@@ -71,13 +71,13 @@
   failed_when: false
 
 - name: Fail if the template doesn't exist
-  # This project doesn't build its own template — see
+  # This project doesn't build its own template - see
   # ../Shared/Ansible/create-template-linux.yaml.
   ansible.builtin.fail:
     msg: |
       vm_template_vmid {{ vm_template_vmid }} ('{{ vm_template_name }}')
       doesn't exist or isn't a template. This project doesn't build one
-      itself — build it with:
+      itself - build it with:
         cd ../Shared/Ansible && ansible-playbook create-template-linux.yaml -e template_target={{ vm_template_name }}
       ('{{ vm_template_name }}' must be a row in
       ../Shared/Ansible/template_manifest.yaml), then set
@@ -96,7 +96,7 @@
     fail_msg: >-
       network_bridge is not set in inventory/group_vars/proxmox_pve1/vars.yaml.
       The shared template is built on the build VLAN, so create_forgejo_vm must
-      re-point the clone's NIC at this project's real bridge — set it before deploying.
+      re-point the clone's NIC at this project's real bridge - set it before deploying.
     quiet: true
 
 - name: Require DNS servers when the VM uses a static IP
@@ -118,12 +118,12 @@
     node: "{{ proxmox_node }}"
   register: preflight_network
 
-- name: Warn if network_bridge doesn't exist (non-fatal — SDN bridges may not enumerate here)
+- name: Warn if network_bridge doesn't exist (non-fatal - SDN bridges may not enumerate here)
   ansible.builtin.debug:
     msg: |
       WARNING: bridge '{{ network_bridge }}' wasn't found in the interface
       list for {{ proxmox_node }}. If you're using an SDN-managed bridge
-      this can be a false positive — verify manually before proceeding.
+      this can be a false positive - verify manually before proceeding.
   when: network_bridge not in (preflight_network.proxmox_node_network | default([]) | map(attribute='iface') | list)
 
 - name: Check whether a guest named forgejo_hostname already exists
@@ -143,8 +143,8 @@
   when: preflight_existing_guest.proxmox_vms | length > 0
 
 - name: Fail fast if forgejo_admin_username is a Forgejo-reserved name
-  # Not exhaustive — Forgejo's actual reserved-username list is the
-  # authority — but catches the common collisions with a clear message
+  # Not exhaustive - Forgejo's actual reserved-username list is the
+  # authority - but catches the common collisions with a clear message
   # instead of a cryptic "CreateUser: name is reserved" from the CLI deep
   # into forgejo_install.
   ansible.builtin.fail:
@@ -152,7 +152,7 @@
       forgejo_admin_username is '{{ forgejo_admin_username }}', which
       Forgejo reserves (it collides with a built-in route, e.g. /admin,
       /api, /login). Pick something else in
-      inventory/group_vars/forgejo/vars.yaml — e.g. "forgejo-admin".
+      inventory/group_vars/forgejo/vars.yaml - e.g. "forgejo-admin".
   when: >
     forgejo_admin_username | lower in [
       'admin', 'api', 'assets', 'attachments', 'avatars', 'captcha',

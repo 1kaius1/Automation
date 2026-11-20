@@ -3,10 +3,10 @@
 # Forgejo Verify
 # ============================================
 #
-# Local smoke test only — confirms Forgejo itself is healthy. Verifying
+# Local smoke test only - confirms Forgejo itself is healthy. Verifying
 # it through the shared reverse proxy/HTTPS is a separate manual step
 # once the upstream route is added there (outside this project's scope
-# — see README.md), so it's deliberately not checked here.
+# - see README.md), so it's deliberately not checked here.
 # ============================================
 
 - name: Confirm the forgejo service is active
@@ -32,7 +32,7 @@
       Forgejo is up and healthy on {{ forgejo_vm_ip }}:{{ forgejo_http_port }}
       ============================================
 
-      Remaining manual steps (outside this project — see README.md):
+      Remaining manual steps (outside this project - see README.md):
         1. Add an upstream route for {{ forgejo_domain }} -> {{ forgejo_vm_ip }}:{{ forgejo_http_port }}
            in your shared reverse proxy.
         2. Confirm https://{{ forgejo_domain }}{{ forgejo_healthz_path }} returns 200 once that's done.

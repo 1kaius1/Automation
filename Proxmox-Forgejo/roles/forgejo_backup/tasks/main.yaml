@@ -5,12 +5,12 @@
 #
 # Triggers a vzdump of the Forgejo VM to backup_storage_target, which is
 # expected to be OFF-NODE storage (Proxmox Backup Server, or an NFS/CIFS
-# share) — a same-node backup does not survive that node's hardware
+# share) - a same-node backup does not survive that node's hardware
 # failure. See the Disaster Recovery section of README.md.
 #
 # This is the on-demand / cron-driven alternative. The simpler default
 # is registering forgejo_vm_vmid in Proxmox's own Datacenter -> Backup
-# scheduled job pointed at the same off-node storage — no Ansible
+# scheduled job pointed at the same off-node storage - no Ansible
 # required for that path at all. Use whichever fits your workflow; both
 # write to the same off-node target.
 #

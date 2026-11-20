@@ -7,7 +7,7 @@ forgejo_arch: amd64
 forgejo_install_dir: "{{ forgejo_app_dir | default('/opt/app/forgejo') }}"
 # forgejo_version may be given with or without a leading "v" (Codeberg
 # displays release tags as "v16.0.3", but asset filenames use the bare
-# number) — normalize once here so the URL is correct either way.
+# number) - normalize once here so the URL is correct either way.
 forgejo_version_number: "{{ forgejo_version | regex_replace('^v', '') }}"
 forgejo_download_url: "https://codeberg.org/forgejo/forgejo/releases/download/v{{ forgejo_version_number }}/forgejo-{{ forgejo_version_number }}-linux-{{ forgejo_arch }}"
 forgejo_checksum_url: "{{ forgejo_download_url }}.sha256"

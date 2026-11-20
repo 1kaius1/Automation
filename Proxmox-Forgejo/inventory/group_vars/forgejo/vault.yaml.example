@@ -4,16 +4,16 @@
 # Create the real vault.yaml with:
 #   ansible-vault create inventory/group_vars/forgejo/vault.yaml
 #
-# See Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md if you're new to Ansible Vault — it walks
+# See Shared/Ansible/docs/ANSIBLE_VAULT_GUIDE.md if you're new to Ansible Vault - it walks
 # through exactly this command and what to expect.
 #
 # forgejo_secret_key / forgejo_internal_token / forgejo_jwt_secret /
 # forgejo_lfs_jwt_secret must be URL-safe, UNPADDED base64 (32 random
-# bytes) — Forgejo's own decoder rejects standard base64's "+", "/", and
+# bytes) - Forgejo's own decoder rejects standard base64's "+", "/", and
 # "=" padding characters for these fields ("illegal base64 data" at
 # startup, confirmed against a real deploy). Generate each with:
 #   python3 -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('='))"
-# Generated once, then left fixed — regenerating them on a later run
+# Generated once, then left fixed - regenerating them on a later run
 # invalidates existing sessions and breaks webhook signature verification.
 
 vault_forgejo_db_password: "change-me"

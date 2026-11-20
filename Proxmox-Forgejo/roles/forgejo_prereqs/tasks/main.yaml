@@ -5,11 +5,11 @@
 #
 # Base packages, the dedicated non-root service account, directory
 # layout, and firewall rules. Runs on the freshly-created VM (hosts:
-# forgejo — see deploy_forgejo.yaml).
+# forgejo - see deploy_forgejo.yaml).
 # ============================================
 
 - name: Update apt cache
-  # No cache_valid_time — this role runs once per VM's lifetime (at
+  # No cache_valid_time - this role runs once per VM's lifetime (at
   # first configuration), so trusting a "recent enough" cache based on
   # file mtimes from image build/cloud-init isn't worth the risk: it was
   # observed skipping the real update on a brand-new VM, leaving even a
@@ -62,7 +62,7 @@
   # forgejo_install later runs tasks with become_user: "{{ forgejo_system_user
   # }}" (checking/creating the admin account). Without this existing
   # beforehand, Ansible creates ~/.ansible/tmp on the fly and hands it off
-  # to the become_user — a known-fragile path across some sudo configs
+  # to the become_user - a known-fragile path across some sudo configs
   # (hence its own warning: "this may cause issues when running as
   # another user... create the remote_tmp dir with the correct
   # permissions manually").
