@@ -1,6 +1,6 @@
 ---
 # Pin the interpreter explicitly rather than relying on Ansible's
-# auto-discovery — on systems with pyenv (or similar) installed alongside
+# auto-discovery - on systems with pyenv (or similar) installed alongside
 # the system Python, discovery can pick a broken/unselected pyenv shim
 # for localhost and fail at the very first "Gathering Facts" task with a
 # "Module result deserialization failed" error. /usr/bin/python3 is the

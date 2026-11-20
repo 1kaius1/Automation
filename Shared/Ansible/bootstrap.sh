@@ -5,7 +5,7 @@
 #   <repo-root>/.venv/                 Python venv (ansible-core + deps)
 #   <repo-root>/.ansible/collections/  Galaxy collections
 #
-# Both are gitignored. Idempotent — safe to re-run to pick up updated
+# Both are gitignored. Idempotent - safe to re-run to pick up updated
 # requirements. The Deploy.sh / Install-Prerequisites.sh wrappers use this
 # automatically (they put .venv/bin on PATH and export
 # ANSIBLE_COLLECTIONS_PATH); you only run this once per checkout, and
@@ -28,7 +28,7 @@ echo
 if [ ! -x "$VENV/bin/python" ]; then
   echo "Creating the virtualenv..."
   if ! python3 -m venv "$VENV" 2>/dev/null; then
-    echo "python3 -m venv failed — install the venv module:" >&2
+    echo "python3 -m venv failed - install the venv module:" >&2
     echo "  sudo apt install python3-venv" >&2
     exit 1
   fi

@@ -1,7 +1,7 @@
 # Python packages for the Ansible control node.
 #
 # bootstrap.sh installs these into <repo-root>/.venv so they never touch
-# the system Python — `cryptography` in particular clashes with distro
+# the system Python - `cryptography` in particular clashes with distro
 # packages, which is the whole reason this venv exists.
 #
 # Pinned to the versions this repo is developed against; bump deliberately.

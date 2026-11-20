@@ -1,9 +1,9 @@
 ---
-# Configuration for create-template-linux.yaml. This repo is public —
+# Configuration for create-template-linux.yaml. This repo is public -
 # the real template_configuration.yaml is gitignored (see .gitignore);
 # copy this file to that name and fill in your own values.
 #
-# One run of create-template-linux.yaml builds ONE template — the one
+# One run of create-template-linux.yaml builds ONE template - the one
 # named by template_target below. To build every template still missing
 # from template_manifest.yaml in a single pass, run ./create-templates_from_manifest.sh
 # instead (it invokes this playbook once per manifest row).
@@ -24,11 +24,11 @@ template_storage_pool: "REPLACE_ME_STORAGE_POOL"
 template_network_bridge: "vmbr0"
 
 # The build VLAN. This is expected to be a dedicated /24 that ONLY this
-# pipeline (and any ISO/Packer build flow) ever uses — just-in-time
+# pipeline (and any ISO/Packer build flow) ever uses - just-in-time
 # outbound internet for a build VM, never anything on a production VLAN,
 # so there is nothing to collide with.
 #
-# The build VM's OWN address is NOT set here — it is DERIVED from this
+# The build VM's OWN address is NOT set here - it is DERIVED from this
 # subnet and the template's VMID:
 #     <subnet first three octets>.<(vmid - 90000) % 220 + 20>/24
 # i.e. the .20-.239 host range. VMIDs are globally unique, so 5-10 (or
@@ -50,7 +50,7 @@ template_build_nameservers: ["1.1.1.1", "9.9.9.9"]
 # ipconfig0, which Ubuntu 26.04 / Rocky / Arch cloud-init ignore; a
 # netplan-v2 snippet applies reliably everywhere. create-pve_svc_user.yaml
 # enables `snippets` content on this storage and makes its snippets/ dir
-# writable by svc_ansible — keep this equal to pve_svc_snippet_storage there.
+# writable by svc_ansible - keep this equal to pve_svc_snippet_storage there.
 template_snippet_storage: "local"
 
 # ============================================
@@ -58,7 +58,7 @@ template_snippet_storage: "local"
 # template's disks" for how to enlarge either disk on a clone)
 # ============================================
 
-# ABSOLUTE size of the root disk (scsi0) — the OS only. Apps and their
+# ABSOLUTE size of the root disk (scsi0) - the OS only. Apps and their
 # data/logs go on the /opt disk below. The imported cloud image's root
 # is resized to exactly this before first boot IF it is currently
 # smaller; it is NEVER shrunk (xfs can't shrink, and an absolute
@@ -78,7 +78,7 @@ template_root_size: "16G"
 # gets a bigger /opt on the next boot with no in-guest step. On an
 # LVM-thin pool this costs almost nothing until data is written; for a
 # space-guaranteed / low-latency DB VM, clone onto a NON-thin storage
-# (LVM-thin has no thick toggle) — see the README.
+# (LVM-thin has no thick toggle) - see the README.
 template_opt_size_gb: 16
 
 # Filesystem for the /opt disk: "xfs" or "ext4".
@@ -95,7 +95,7 @@ template_opt_fstype: "xfs"
 # their checksum sidecars. The playbook validates a cached image against
 # its sidecar before downloading, so a template can be rebuilt with no
 # internet traffic once the image is cached. Created by
-# create-pve_svc_user.yaml (as pve_svc_cache_dir — keep the two equal if
+# create-pve_svc_user.yaml (as pve_svc_cache_dir - keep the two equal if
 # you change this). Pass -e refresh_image_cache=true to force a re-download.
 template_image_cache_dir: "/var/cache/vm-template-images"
 
@@ -120,7 +120,7 @@ template_cpu_type: ""
 # Templates for create-templates_from_manifest.sh to SKIP in this environment. It
 # prints "skipped (template_skip)" and does NOT count them as failures.
 # Use it for manifest rows that can't be built on this cluster for host
-# reasons — e.g. an x86-64-v3 template (Rocky/RHEL 10) on a pre-Haswell
+# reasons - e.g. an x86-64-v3 template (Rocky/RHEL 10) on a pre-Haswell
 # node. A direct `ansible-playbook ... -e template_target=<name>` still
 # runs it (the playbook's CPU pre-flight then fails it fast if the node
 # genuinely can't provide the model). Leave empty to build everything.
@@ -141,16 +141,16 @@ template_target: "T-Debian-13-Cloud"
 # sysadmin account baked into the template
 # ============================================
 
-# Public key only — this is not secret, safe to commit for real if you
+# Public key only - this is not secret, safe to commit for real if you
 # want to, though the .example convention here keeps it generic too.
 # Used for BOTH the template's baked-in sysadmin account AND (by
 # create-pve_svc_user.yaml) the svc_ansible account on the Proxmox nodes.
 sysadmin_ssh_public_key: "REPLACE_ME_SSH_PUBLIC_KEY"
 
 # The initial local-console password for sysadmin (SSH access is
-# key-only regardless — see create-template-linux.yaml's own comments
+# key-only regardless - see create-template-linux.yaml's own comments
 # for why this still matters). Defined in the sibling
-# template_configuration_vault.yaml, referenced here — see
+# template_configuration_vault.yaml, referenced here - see
 # template_configuration_vault.yaml.example.
 sysadmin_initial_password: "{{ vault_sysadmin_initial_password }}"
 

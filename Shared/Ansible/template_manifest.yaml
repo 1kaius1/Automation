@@ -14,15 +14,15 @@
 #            "T-Debian-13-Cloud", "T-Rocky-10-ISO",
 #            "T-Arch-20260901.583572-Cloud", "T-Ubuntu-24.04-ISO-STIG".
 #            <Source> is REQUIRED and is exactly "Cloud" or "ISO"
-#            (capitalised — these are friendly names). <Variant> is
+#            (capitalised - these are friendly names). <Variant> is
 #            optional and names a customisation layer applied on top of
 #            the base (e.g. STIG, K8s). This is the human-facing identity
 #            and the value a build run selects with `template_target` in
 #            template_configuration.yaml.
 #
-#   source   REQUIRED. "Cloud" (import the vendor cloud image — built by
+#   source   REQUIRED. "Cloud" (import the vendor cloud image - built by
 #            create-template-linux.yaml) or "ISO" (automated install from
-#            the vendor ISO onto a minimal base — built by a separate
+#            the vendor ISO onto a minimal base - built by a separate
 #            Packer project, planned). create-template-linux.yaml only
 #            builds "Cloud" rows and fails fast on an "ISO" row.
 #
@@ -33,7 +33,7 @@
 #   vmid     From 90000 up. Until this repo cuts its 1.0.0 release the
 #            table may be renumbered freely (e.g. when a row is removed,
 #            shuffle the rest down to stay contiguous). FROM 1.0.0 ON:
-#            a vmid is permanent — never renumber or reuse, and a removed
+#            a vmid is permanent - never renumber or reuse, and a removed
 #            row's number stays retired (leave the gap).
 #
 #            Templates live in the 90000+ band on purpose: Proxmox's
@@ -55,7 +55,7 @@
 #                      both `name` and `version` on the row and rebuild.
 #
 #   stub     Optional, default false. `stub: true` reserves the name +
-#            vmid but marks the build path as not-yet-working —
+#            vmid but marks the build path as not-yet-working -
 #            create-template-linux.yaml fails fast on it and
 #            create-templates_from_manifest.sh skips it. Put the reason in a comment
 #            on the row.
@@ -69,7 +69,7 @@ templates:
   - { name: "T-Ubuntu-24.04-Cloud", os: ubuntu, version: "24.04", source: Cloud, vmid: 90002 }
   - { name: "T-Ubuntu-26.04-Cloud", os: ubuntu, version: "26.04", source: Cloud, vmid: 90003 }
   - { name: "T-Rocky-9-Cloud",      os: rocky,  version: "9",     source: Cloud, vmid: 90004 }
-  # Rocky/RHEL 10 mandate an x86-64-v3 CPU (AVX2/BMI2/FMA — Haswell/Zen or
+  # Rocky/RHEL 10 mandate an x86-64-v3 CPU (AVX2/BMI2/FMA - Haswell/Zen or
   # newer). The build node must have that silicon; a pre-Haswell host
   # (e.g. Ivy Bridge) cannot build or run this template.
   - { name: "T-Rocky-10-Cloud",     os: rocky,  version: "10",    source: Cloud, vmid: 90005 }

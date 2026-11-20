@@ -7,7 +7,7 @@
 # run per template.
 #
 # create-template-linux.yaml itself builds exactly ONE template (the one
-# named by template_target) and fails fast if it already exists — that is
+# named by template_target) and fails fast if it already exists - that is
 # the right behaviour for a single, deliberate build. This wrapper is the
 # "make all the base templates" entry point: it walks the manifest and
 # invokes the playbook once per row with `-e batch_mode=true`, which turns
@@ -30,7 +30,7 @@ cd "$(dirname "$0")"
 # Use the repo-local Ansible toolchain (Shared/Ansible/bootstrap.sh).
 ROOT="$(git rev-parse --show-toplevel)"
 if [ ! -x "${ROOT}/.venv/bin/ansible-playbook" ]; then
-  echo "No Ansible venv at ${ROOT}/.venv — run ${ROOT}/Shared/Ansible/bootstrap.sh first" >&2
+  echo "No Ansible venv at ${ROOT}/.venv - run ${ROOT}/Shared/Ansible/bootstrap.sh first" >&2
   exit 1
 fi
 export PATH="${ROOT}/.venv/bin:${PATH}"
@@ -95,7 +95,7 @@ for row in "${ROWS[@]}"; do
         built+=("$name")
     else
         rc=$?
-        echo "!!! $name: ansible-playbook exited $rc — see output above" >&2
+        echo "!!! $name: ansible-playbook exited $rc - see output above" >&2
         failed+=("$name")
     fi
     echo
@@ -107,7 +107,7 @@ echo "  ok                    : ${built[*]:-(none)}"
 echo "  failed                : ${failed[*]:-(none)}"
 echo "  skipped (stub)        : ${skipped_stub[*]:-(none)}"
 echo "  skipped (template_skip): ${skipped_config[*]:-(none)}"
-echo "(a template that already existed is reported as ok — it was skipped,"
+echo "(a template that already existed is reported as ok - it was skipped,"
 echo " not rebuilt; see each run's log above for which.)"
 
 [ "${#failed[@]}" -eq 0 ]

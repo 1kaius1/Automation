@@ -4,7 +4,7 @@
 # ============================================
 #
 # Builds ONE hardened, cloud-init-ready Proxmox VM template per run,
-# usable by any project in this mono-repo (not specific to Forgejo) —
+# usable by any project in this mono-repo (not specific to Forgejo) -
 # see Proxmox-Forgejo/README.md for how a consuming project points at
 # the resulting template via vm_template_name/vm_template_vmid.
 #
@@ -22,46 +22,46 @@
 # playbook fail fast.
 #
 # This playbook CREATES templates and never deletes or modifies a VM.
-# If anything already occupies the target VMID — a finished template, a
+# If anything already occupies the target VMID - a finished template, a
 # half-built shell from a crashed run, an unrelated guest, or any VM
-# named "T-*" that is not a template — Play 1 stops with a message for
+# named "T-*" that is not a template - Play 1 stops with a message for
 # the operator to resolve it. Nothing is purged automatically.
 #
 # What gets baked into every template, regardless of OS:
 #   - root: a random, high-entropy password (SSH access forbidden
-#     entirely — nobody is meant to ever type it; see "About the root
+#     entirely - nobody is meant to ever type it; see "About the root
 #     password" below for what this actually means in practice).
 #   - sysadmin: created with display name "SysAdmin", full NOPASSWD sudo
 #     via /etc/sudoers.d/sysadmin, SSH restricted to key-only (no
 #     password-based interactive login for ANY account, not just this
-#     one — see the sshd hardening step), authorized_keys set to
+#     one - see the sshd hardening step), authorized_keys set to
 #     sysadmin_ssh_public_key, initial (console-only) password set from
 #     the vaulted sysadmin_initial_password.
 #   - qemu-guest-agent: installed and enabled, so clones report their IP
 #     to Proxmox and shut down cleanly (cloud images don't ship it
 #     running).
 #   - disks: root (scsi0) sized to an absolute template_root_size (default
-#     16G), grown-to only — never shrunk. A second disk (scsi1,
+#     16G), grown-to only - never shrunk. A second disk (scsi1,
 #     template_opt_size_gb, default 16G) carries a whole-disk filesystem
 #     (template_opt_fstype, default xfs) mounted at /opt with /opt/app
 #     (applications) and /opt/data (application data + logs). fstab uses
 #     UUID=, options defaults,nodev,nosuid,nofail,x-systemd.growfs (NOT
-#     noexec — /opt/app executes). scsi1 is not in the boot order. A clone
+#     noexec - /opt/app executes). scsi1 is not in the boot order. A clone
 #     that resizes either disk gets a bigger filesystem on next boot
 #     (cloud-init growpart for /, x-systemd.growfs for /opt).
 #   - systemd-ssh-generator masked (opt out via template_mask_ssh_generator:
-#     false) — this generator probes for a vsock transport on every boot,
+#     false) - this generator probes for a vsock transport on every boot,
 #     which VMs built here never have, so it only ever logs a harmless
 #     "Failed to determine the local CID" failure. See
 #     template_configuration.yaml.example for the full rationale.
 #
-# The build VM boots with a STATIC IP on template_network_bridge — the
+# The build VM boots with a STATIC IP on template_network_bridge - the
 # playbook SSHes to that address to harden it, then converts it to a
 # template. The address is NOT configured by hand: it is derived from the
 # VMID as <template_build_subnet prefix>.<(vmid - 90000) % 220 + 20>/24,
 # so concurrent builds (each with a distinct VMID) never collide and no
 # IPAM / DHCP / lock is needed. The build VLAN is assumed pipeline-
-# exclusive — a dedicated /24 that nothing else uses. When NetBox exists,
+# exclusive - a dedicated /24 that nothing else uses. When NetBox exists,
 # swap the derivation for a NetBox allocation call; nothing else changes.
 #
 # Usage:
@@ -74,7 +74,7 @@
 # (copy from their .example files), template_manifest.yaml (committed),
 # the node(s) listed in inventory/hosts.ini, a vault password file in
 # place, and the shared svc_ansible identity provisioned by
-# create-pve_svc_user.yaml — which sets up BOTH the cluster API token
+# create-pve_svc_user.yaml - which sets up BOTH the cluster API token
 # (group_vars/proxmox_cluster/) and, on every node, the SSH account +
 # scoped sudo + the image cache dir + the snippet storage this playbook
 # needs. See docs/ANSIBLE_VAULT_GUIDE.md if unfamiliar.
@@ -82,7 +82,7 @@
 # Networking: the build VM's static IP is delivered as a netplan-v2
 # cloud-init network-config snippet (written to template_snippet_storage,
 # referenced via `qm set --cicustom network=`) rather than Proxmox's
-# `ipconfig0` — the latter emits cloud-init network-config v1, which
+# `ipconfig0` - the latter emits cloud-init network-config v1, which
 # newer cloud-init (Ubuntu 26.04, Rocky, Arch) silently ignores. The
 # snippet + cicustom are removed again before templatizing. That snippet
 # is kept minimal for cross-renderer portability: `to: 0.0.0.0/0` not the
@@ -90,7 +90,7 @@
 # shorthand and applies nothing), and NO `set-name:` (Ubuntu's cloud
 # image has predictable NIC names, so set-name makes cloud-init try to
 # rename an already-UP interface, which fails and skips the whole config
-# — the MAC `match:` targets the NIC without needing a rename).
+# - the MAC `match:` targets the NIC without needing a rename).
 #
 # CPU model: `qm create` passes `--cpu` from os_catalog[os].cpu_type
 # (default x86-64-v2-AES; EL10 -> x86-64-v3). Without it Proxmox uses
@@ -99,22 +99,22 @@
 #
 # First boot: a matching `--cicustom user=` snippet replaces Proxmox's
 # auto-generated user-data. It creates the `sysadmin` bootstrap account
-# (key-only) and, crucially, sets `package_upgrade: false` — Proxmox
+# (key-only) and, crucially, sets `package_upgrade: false` - Proxmox
 # otherwise injects `package_upgrade: true`, a full apt/dnf upgrade that
 # can add 3-10 min to first boot and push past the SSH wait. The harden
 # play does a targeted `apt update` + guest-agent install instead.
 #
 # About the root password: once this hardens sshd (PasswordAuthentication
 # no, PermitRootLogin no), the generated root password can only ever be
-# used at the Proxmox console (noVNC), never over SSH — by any account,
+# used at the Proxmox console (noVNC), never over SSH - by any account,
 # not just root. It's displayed once at the end of this run in case you
 # ever need console-only emergency access; otherwise you never need it.
 #
 # NOTE: T-Debian-12/13 and T-Ubuntu-24.04 have built end-to-end against
 # a live cluster. Rocky 9 has been verified as far as first boot on the
-# real cluster — kernel boots with the x86-64-v2 CPU model and the guest
+# real cluster - kernel boots with the x86-64-v2 CPU model and the guest
 # takes the static IP from the netplan-v2 snippet with the 0.0.0.0/0
-# route — but not yet all the way through the harden/templatize plays on
+# route - but not yet all the way through the harden/templatize plays on
 # the current two-disk design. Ubuntu 26.04 and Arch have not been built
 # on this design. RHEL is a manifest stub (guarded off in Play 1); EL10
 # needs an x86-64-v3 build host.
@@ -136,14 +136,14 @@
     # version number). checksum_style picks which Jinja extraction logic
     # runs later: "gnu" for the common `<hash>  <filename>` format
     # (Debian/Ubuntu/Arch, verified against live manifests), "bsd" for
-    # Rocky's `SHA256 (<filename>) = <hash>` format — also verified
+    # Rocky's `SHA256 (<filename>) = <hash>` format - also verified
     # live; a generic single extraction pattern does NOT work for both.
     #
     # cpu_type is the QEMU CPU model handed to `qm create --cpu`. Proxmox
     # otherwise defaults to `kvm64` (an x86-64-v1 baseline), on which
-    # RHEL/Rocky/Alma/Oracle 9 kernels PANIC on boot — EL9 requires
+    # RHEL/Rocky/Alma/Oracle 9 kernels PANIC on boot - EL9 requires
     # x86-64-v2 (SSE4.2/POPCNT/CMPXCHG16B). EL10 raises the bar again to
-    # x86-64-v3 (AVX2/BMI2/FMA — Haswell 2013+; a host older than that
+    # x86-64-v3 (AVX2/BMI2/FMA - Haswell 2013+; a host older than that
     # cannot run EL10 guests at all). Debian/Ubuntu/Arch boot fine on
     # v1 but there's no downside to giving every template the same
     # modern, still-widely-migratable v2-AES floor. Override per run with
@@ -175,7 +175,7 @@
       arch:
         # Arch cloud images are dated: the manifest version is a full
         # "YYYYMMDD.serial" (e.g. "20260901.583572") from
-        # https://geo.mirror.pkgbuild.com/images/ — carried in the
+        # https://geo.mirror.pkgbuild.com/images/ - carried in the
         # template name (T-Arch-<version>) so it's transparent, and
         # pinned/cacheable like every other OS.
         cpu_type: x86-64-v2-AES
@@ -185,7 +185,7 @@
         image_url: "https://geo.mirror.pkgbuild.com/images/v{{ template_os_version }}/{{ os_catalog.arch.image_filename }}"
         checksum_url: "https://geo.mirror.pkgbuild.com/images/v{{ template_os_version }}/{{ os_catalog.arch.image_filename }}.SHA256"
       rhel:
-        # STUB — the T-RHEL-* manifest rows carry `stub: true` and Play 1
+        # STUB - the T-RHEL-* manifest rows carry `stub: true` and Play 1
         # fails fast on them. RHEL's official KVM guest image is not on an
         # anonymous URL: it needs an authenticated download from the Red
         # Hat Customer Portal, or a pre-staged image + subscription-manager
@@ -244,7 +244,7 @@
     - name: Fail if the manifest row has no valid source
       ansible.builtin.fail:
         msg: >-
-          '{{ template_name }}' has source '{{ template_source }}' — every row
+          '{{ template_name }}' has source '{{ template_source }}' - every row
           needs `source: Cloud` or `source: ISO` (capitalised).
       when: template_source not in ['Cloud', 'ISO']
 
@@ -259,7 +259,7 @@
     - name: Refuse to build a manifest stub row
       ansible.builtin.fail:
         msg: >-
-          '{{ template_name }}' is marked `stub: true` in template_manifest.yaml —
+          '{{ template_name }}' is marked `stub: true` in template_manifest.yaml -
           its name/vmid are reserved but the build path is not working yet.
           See the comment on that row for why.
       when: template_row.stub | default(false) | bool
@@ -269,7 +269,7 @@
     # modifies a VM. Anything already sitting on THIS run's target vmid is
     # a hard stop for the operator to resolve, not something we clean up.
     # Concurrent builds of OTHER manifest rows (parallel create-templates_from_manifest.sh) are
-    # fine and expected — each run owns a distinct vmid — so the
+    # fine and expected - each run owns a distinct vmid - so the
     # cluster-wide "T-* that isn't a template" scan only hard-fails on a
     # vmid that isn't in the manifest at all.
     # ----------------------------------------
@@ -287,16 +287,16 @@
 
     - name: Identify the "T-*" VMs that are not templates
       # proxmox_vm_info reports `template` as a bool, and only on actual
-      # templates — a plain VM may omit the key entirely, so the missing
+      # templates - a plain VM may omit the key entirely, so the missing
       # case and the explicit-false case are handled separately.
       #
       # Split them:
-      #   * off_manifest_t_vms — vmid is NOT in template_manifest.yaml.
+      #   * off_manifest_t_vms - vmid is NOT in template_manifest.yaml.
       #     Genuine strays; hard-fail (a "T-" name at an unknown vmid is
       #     not something this pipeline ever creates on purpose).
-      #   * sibling_build_t_vms — vmid IS a manifest row, but not this
+      #   * sibling_build_t_vms - vmid IS a manifest row, but not this
       #     run's target. Almost always a concurrent build of another row
-      #     (parallel create-templates_from_manifest.sh / an orchestrator) — expected, so just
+      #     (parallel create-templates_from_manifest.sh / an orchestrator) - expected, so just
       #     note it. A genuinely crashed build of that row gets caught
       #     precisely when that row is (re)built, by the VMID-occupant
       #     check below. This run's own target vmid, occupied or not, is
@@ -320,14 +320,14 @@
     - name: Fail fast on a non-template "T-*" VM at an unknown VMID
       ansible.builtin.fail:
         msg: |
-          Refusing to run — found VM(s) named "T-*" that are NOT templates
+          Refusing to run - found VM(s) named "T-*" that are NOT templates
           and are NOT allocated in template_manifest.yaml:
           {% for v in off_manifest_t_vms %}
             - {{ v.name }} (vmid {{ v.vmid }}, node {{ v.node | default('?') }}, status {{ v.status | default('?') }})
           {% endfor %}
           This pipeline never creates a "T-" VM outside the manifest's
           vmid band, so this is a leftover or a name clash. This playbook
-          will not delete or modify it — resolve it by hand, then re-run.
+          will not delete or modify it - resolve it by hand, then re-run.
       when: off_manifest_t_vms | length > 0
 
     - name: Note concurrent sibling builds (parallel runs)
@@ -366,7 +366,7 @@
         - vmid_occupant | length > 0
         - not matching_template_exists
 
-    - name: Fail — template already exists (single-build run)
+    - name: Fail - template already exists (single-build run)
       ansible.builtin.fail:
         msg: |
           Template '{{ template_name }}' (vmid {{ template_vmid }}) already exists.
@@ -374,14 +374,14 @@
           an existing one. To rebuild, delete it first
           (qm destroy {{ template_vmid }} --purge on {{ template_target_node }}).
           To build every template still missing from the manifest, run
-          ./create-templates_from_manifest.sh — it skips the ones that already exist.
+          ./create-templates_from_manifest.sh - it skips the ones that already exist.
       when:
         - matching_template_exists
         - not (batch_mode | default(false) | bool)
 
-    - name: Note the skip — template already exists (batch run)
+    - name: Note the skip - template already exists (batch run)
       ansible.builtin.debug:
-        msg: "Template '{{ template_name }}' (vmid {{ template_vmid }}) already exists — skipping."
+        msg: "Template '{{ template_name }}' (vmid {{ template_vmid }}) already exists - skipping."
       when:
         - matching_template_exists
         - batch_mode | default(false) | bool
@@ -420,7 +420,7 @@
 
     - name: Resolve the QEMU CPU model for the build VM
       # template_cpu_type (config) wins if set; otherwise the per-OS floor
-      # from os_catalog — EL9 needs x86-64-v2 or its kernel panics on the
+      # from os_catalog - EL9 needs x86-64-v2 or its kernel panics on the
       # default kvm64, EL10 needs x86-64-v3. See the os_catalog comment.
       ansible.builtin.set_fact:
         template_cpu_type: "{{ template_cpu_type | default('', true) or selected_os.cpu_type }}"
@@ -430,7 +430,7 @@
     # VM whose --cpu model needs host features the node lacks; without
     # this check that surfaces as an opaque "Reached timeout while waiting
     # for starting VM" minutes later. x86-64-v3 (Rocky/RHEL 10) needs
-    # AVX2 etc. — Haswell / Zen or newer; an Ivy Bridge node cannot build
+    # AVX2 etc. - Haswell / Zen or newer; an Ivy Bridge node cannot build
     # those templates.
     # ----------------------------------------
     - name: Work out which host CPU flags the chosen model needs
@@ -457,13 +457,13 @@
       ansible.builtin.fail:
         msg: |
           Build node '{{ template_target_node }}' cannot run QEMU CPU model
-          '{{ template_cpu_type }}' needed by {{ template_name }} — missing
+          '{{ template_cpu_type }}' needed by {{ template_name }} - missing
           host CPU flag(s): {{ required_cpu_flags | difference(node_cpuinfo.stdout.split(':', 1)[1].split()) | join(', ') }}
 
-          Rocky/RHEL 10 require x86-64-v3 (AVX2, BMI2, FMA — Haswell / Zen
+          Rocky/RHEL 10 require x86-64-v3 (AVX2, BMI2, FMA - Haswell / Zen
           or newer). Build this template on a node with a new enough CPU,
           or override template_cpu_type in template_configuration.yaml to a
-          model this node supports (last resort — the guest kernel may then
+          model this node supports (last resort - the guest kernel may then
           refuse to boot).
       when:
         - template_build_needed
@@ -494,11 +494,11 @@
         fail_msg: >-
           Set these in template_configuration.yaml: template_build_subnet as a
           /24 CIDR for the dedicated, pipeline-only build VLAN (e.g.
-          10.9.9.0/24) — the build VM's own address is DERIVED from this and
-          the VMID, not set by hand — template_build_gateway as a bare IPv4 on
+          10.9.9.0/24) - the build VM's own address is DERIVED from this and
+          the VMID, not set by hand - template_build_gateway as a bare IPv4 on
           that subnet, template_build_nameservers as a non-empty list,
           template_snippet_storage as a dir-type storage name, template_root_size
-          as an ABSOLUTE size like "16G" (no leading "+" — grown TO, never
+          as an ABSOLUTE size like "16G" (no leading "+" - grown TO, never
           shrunk), template_opt_size_gb as a positive integer of GiB, and
           template_opt_fstype as ext4 or xfs. Template VMIDs are >= 90000
           (see template_manifest.yaml).
@@ -509,7 +509,7 @@
       # i.e. the .20-.239 range. VMIDs are globally unique, so any number of
       # concurrent builds get distinct addresses with no IPAM, DHCP server
       # or lock file. A collision needs two template VMIDs exactly 220 apart
-      # — implausible in the 90000 band, and widened by bumping the modulus.
+      # - implausible in the 90000 band, and widened by bumping the modulus.
       # When NetBox exists, replace this with a NetBox allocation call and
       # nothing downstream changes.
       ansible.builtin.set_fact:
@@ -523,7 +523,7 @@
           {{ template_build_ip }} gw {{ template_build_gateway }} on the build VLAN.
       when: template_build_needed
 
-    - name: Generate the root password (random, high-entropy — see header comment)
+    - name: Generate the root password (random, high-entropy - see header comment)
       ansible.builtin.set_fact:
         template_root_password: "{{ lookup('ansible.builtin.pipe', 'openssl rand -base64 48') }}"
       when: template_build_needed
@@ -531,7 +531,7 @@
 
     - name: Cache resolved build facts for later plays
       # Play 3 (harden) runs on the build VM with no vars_files of its own,
-      # and Play 4 reads a few of these too — anything a later play needs
+      # and Play 4 reads a few of these too - anything a later play needs
       # from config/vault has to become a real localhost fact here, since
       # play vars_files don't cross plays.
       ansible.builtin.set_fact:
@@ -566,7 +566,7 @@
   vars:
     template_build_needed: "{{ hostvars['localhost']['template_build_needed'] }}"
     selected_os: "{{ hostvars['localhost']['selected_os'] }}"
-    # Resources for the throwaway build VM only — the template it becomes
+    # Resources for the throwaway build VM only - the template it becomes
     # is resized/reconfigured by whatever project clones it.
     template_build_memory: 2048
     template_build_cores: 2
@@ -585,7 +585,7 @@
         # Cloud images live in a PERSISTENT on-node cache
         # (template_image_cache_dir), each beside a ".checksum" sidecar
         # holding "<algo>:<hex>". The cached image is validated against
-        # that sidecar BEFORE any download — a valid hit means the whole
+        # that sidecar BEFORE any download - a valid hit means the whole
         # build runs with zero internet traffic (rebuild a corrupted
         # template offline). A corrupt cached image is deleted and
         # re-pulled with a fresh upstream checksum. -e refresh_image_cache=true
@@ -593,7 +593,7 @@
         #
         # The node SSH account (inventory/hosts.ini) is minimal-privilege
         # (sudo for qm/pvesm only), so it cannot create the cache dir
-        # under /var/cache — create-pve_svc_user.yaml does that at
+        # under /var/cache - create-pve_svc_user.yaml does that at
         # provisioning time. Every qm call below is an explicit
         # `sudo -n qm ...` rather than an Ansible `become`.
         - name: Check the on-node image cache directory exists
@@ -608,7 +608,7 @@
             msg: |
               Image cache directory '{{ template_image_cache_dir }}' does not
               exist on {{ template_target_node }}. It is created by
-              create-pve_svc_user.yaml — run that against the node:
+              create-pve_svc_user.yaml - run that against the node:
 
                 ansible-playbook create-pve_svc_user.yaml
 
@@ -665,7 +665,7 @@
 
         - name: Report a cache hit (no download needed)
           ansible.builtin.debug:
-            msg: "Cached {{ selected_os.image_filename }} in {{ template_image_cache_dir }} is valid — building offline, no download."
+            msg: "Cached {{ selected_os.image_filename }} in {{ template_image_cache_dir }} is valid - building offline, no download."
           when: cached_image_valid
 
         - name: Discard a corrupt / stale cached image and sidecar
@@ -688,7 +688,7 @@
           check_mode: false
           when: not cached_image_valid
 
-        - name: "Extract the checksum (GNU-style `<hash>  <filename>` — Debian/Ubuntu/Arch)"
+        - name: "Extract the checksum (GNU-style `<hash>  <filename>` - Debian/Ubuntu/Arch)"
           ansible.builtin.set_fact:
             resolved_checksum: >-
               {{ (checksum_manifest.content.splitlines()
@@ -697,7 +697,7 @@
             - not cached_image_valid
             - selected_os.checksum_style == 'gnu'
 
-        - name: "Extract the checksum (BSD-style `SHA256 (<filename>) = <hash>` — Rocky)"
+        - name: "Extract the checksum (BSD-style `SHA256 (<filename>) = <hash>` - Rocky)"
           ansible.builtin.set_fact:
             resolved_checksum: >-
               {{ (checksum_manifest.content.splitlines()
@@ -724,7 +724,7 @@
           delegate_to: "{{ template_target_node }}"
           when: not cached_image_valid
 
-        # No stale-VM cleanup here by design — Play 1's guards have
+        # No stale-VM cleanup here by design - Play 1's guards have
         # already hard-failed the run if anything (a leftover shell, a
         # non-template "T-*" VM, an unrelated guest) occupies this VMID.
         # This playbook creates; it never destroys.
@@ -751,7 +751,7 @@
           changed_when: true
           delegate_to: "{{ template_target_node }}"
 
-        # The cached image is deliberately left in place after import —
+        # The cached image is deliberately left in place after import -
         # that's what makes a later offline rebuild possible.
 
         - name: Attach the imported disk as scsi0
@@ -787,7 +787,7 @@
             root_current_mib: "{{ (root_size_match[0] | int) * ({'M': 1, 'G': 1024, 'T': 1048576}[root_size_match[1]]) }}"
             root_target_mib: "{{ (template_root_size[:-1] | int) * ({'M': 1, 'G': 1024}[template_root_size[-1]]) }}"
 
-        - name: Grow the root disk to template_root_size (grow-only — never shrink)
+        - name: Grow the root disk to template_root_size (grow-only - never shrink)
           ansible.builtin.command: >
             sudo -n qm disk resize {{ template_vmid }} scsi0 {{ template_root_size }}
           changed_when: true
@@ -796,12 +796,12 @@
 
         - name: Note when the root disk already meets/exceeds the target
           ansible.builtin.debug:
-            msg: "scsi0 is {{ root_current_mib }}MiB >= target {{ root_target_mib }}MiB — left as-is (never shrink)."
+            msg: "scsi0 is {{ root_current_mib }}MiB >= target {{ root_target_mib }}MiB - left as-is (never shrink)."
           when: root_target_mib | int <= root_current_mib | int
 
         - name: Attach a cloud-init drive (on virtio-scsi, NOT ide2)
           # Proxmox's default is `ide2` (a CD-ROM on the emulated PIIX IDE
-          # controller), which enumerates slowly — often after cloud-init's
+          # controller), which enumerates slowly - often after cloud-init's
           # ds-identify has already run its early datasource scan. On Arch,
           # whose cloud-init generator runs ds-identify very early with
           # `notfound=disabled`, the `cidata` label isn't visible yet, so
@@ -809,7 +809,7 @@
           # config, build VM unreachable, "Wait for SSH" hangs. On
           # virtio-scsi the seed disk enumerates with scsi0/scsi1, well
           # before that check. cloud-init's NoCloud finds the `cidata`
-          # filesystem on any bus. scsi2 — scsi1 is the /opt disk.
+          # filesystem on any bus. scsi2 - scsi1 is the /opt disk.
           ansible.builtin.command: >
             sudo -n qm set {{ template_vmid }}
             --scsi2 {{ template_storage_pool }}:cloudinit
@@ -817,7 +817,7 @@
           delegate_to: "{{ template_target_node }}"
 
         - name: Attach the second disk (scsi1) that becomes /opt
-          # Whole-disk filesystem (no partition table) — the harden play
+          # Whole-disk filesystem (no partition table) - the harden play
           # mkfs's and mounts it at /opt. serial=opt gives it a stable
           # /dev/disk/by-id/*_opt name in-guest. Deliberately NOT added to
           # the boot order (root stays scsi0-only). Carried into the
@@ -839,7 +839,7 @@
 
         # The build VM gets a STATIC IP (template_build_ip, derived from
         # the VMID in Play 1 / template_build_gateway / _nameservers) so
-        # the harden play can reach it — cloud images run no QEMU guest
+        # the harden play can reach it - cloud images run no QEMU guest
         # agent, so a DHCP lease can't be discovered from outside. Proxmox's
         # `ipconfig0` emits cloud-init network-config v1, which Ubuntu 26.04
         # / Rocky / Arch cloud-init ignore (they DHCP instead). Deliver a
@@ -871,11 +871,11 @@
         - name: Write the build VM's netplan-v2 network-config snippet
           # Kept deliberately minimal and portable across cloud-init
           # renderers (Ubuntu netplan, EL sysconfig, Arch networkd):
-          #  * `to: 0.0.0.0/0`, NOT the netplan shorthand `to: default` —
+          #  * `to: 0.0.0.0/0`, NOT the netplan shorthand `to: default` -
           #    EL9's sysconfig renderer throws `Address default is not a
           #    valid ip address` on the shorthand and then applies NO
           #    network config at all.
-          #  * NO `set-name:` — Ubuntu's cloud image uses predictable NIC
+          #  * NO `set-name:` - Ubuntu's cloud image uses predictable NIC
           #    names (ens18), so `set-name: eth0` makes cloud-init try to
           #    rename an already-UP interface, which fails `[busy]`, marks
           #    the device "not present", and skips the address/routes
@@ -906,7 +906,7 @@
 
         - name: Write the build VM's cloud-init user-data snippet
           # Replaces Proxmox's auto-generated user-data. Deliberately NO
-          # `package_upgrade: true` (Proxmox injects it — a full apt/dnf
+          # `package_upgrade: true` (Proxmox injects it - a full apt/dnf
           # upgrade on first boot that costs 3-10 min; the harden play does
           # a targeted `apt update` + guest-agent install instead). Just
           # enough for Ansible to SSH in as sysadmin and `become`.
@@ -947,7 +947,7 @@
         - name: Wait for SSH to become available
           # The `--cicustom user=` snippet sets `package_upgrade: false`,
           # so first boot is just cloud-init bringing up the network +
-          # sysadmin account — normally under a minute. The generous
+          # sysadmin account - normally under a minute. The generous
           # ceiling here is only for a slow image pull / dracut run on the
           # newer distros; Play 3's `cloud-init status --wait` then blocks
           # until first boot is truly finished.
@@ -986,7 +986,7 @@
     - name: Wait until the build VM actually accepts an SSH session
       # Play 2's `wait_for` only proved the TCP port answers. On Debian 13
       # / Ubuntu 24.04+ sshd is socket-activated, so systemd accepts the
-      # connection long before the per-connection `sshd@` can serve it —
+      # connection long before the per-connection `sshd@` can serve it -
       # it can't until cloud-init's `ssh` module has generated the host
       # keys, so real SSH gets "Connection refused" in the gap. This
       # retries the whole connection until it genuinely works.
@@ -1000,7 +1000,7 @@
       changed_when: false
       failed_when: false
 
-    - name: Hash the root password (openssl, not passlib — nothing extra to install)
+    - name: Hash the root password (openssl, not passlib - nothing extra to install)
       ansible.builtin.command:
         cmd: openssl passwd -6 -stdin
         stdin: "{{ template_root_password }}"
@@ -1083,10 +1083,10 @@
       when: hostvars['localhost']['template_os'] in ['debian', 'ubuntu']
 
     - name: Refresh the pacman database before installing (Arch)
-      # Sync only — deliberately NOT `-Syu`. A full upgrade on the running
+      # Sync only - deliberately NOT `-Syu`. A full upgrade on the running
       # build VM bumps the `linux` package, which replaces the running
       # kernel's /usr/lib/modules dir, so non-builtin modules (xfs!) can
-      # no longer load until reboot — and `mount /opt` then fails with
+      # no longer load until reboot - and `mount /opt` then fails with
       # "unknown filesystem type 'xfs'". The packages we install here
       # (xfsprogs, qemu-guest-agent) have no kernel dependency, so `-Sy`
       # then `-S <pkg>` doesn't touch the kernel. The cloud image is
@@ -1097,7 +1097,7 @@
       when: hostvars['localhost']['template_os'] == 'arch'
 
     - name: Install and enable the QEMU guest agent
-      # Cloud images don't ship it running — bake it into the template so
+      # Cloud images don't ship it running - bake it into the template so
       # clones report their IP to Proxmox and shut down cleanly. Package
       # name is the same on Debian/Ubuntu/Rocky/Arch.
       ansible.builtin.package:
@@ -1115,7 +1115,7 @@
     # Second disk (scsi1) -> whole-disk filesystem mounted at /opt,
     # holding /opt/app (applications) and /opt/data (data + logs).
     # No partition table, so `x-systemd.growfs` alone grows it on a
-    # clone that enlarges scsi1 — no growpart needed. NOT noexec:
+    # clone that enlarges scsi1 - no growpart needed. NOT noexec:
     # /opt/app holds executables.
     # --------------------------------------------------------------
     - name: Provision the /opt data disk (scsi1)
@@ -1179,7 +1179,9 @@
         - name: Add the /opt entry to /etc/fstab
           ansible.builtin.blockinfile:
             path: /etc/fstab
-            marker: "# {mark} ANSIBLE MANAGED — /opt data disk"
+            # The marker below uses a YAML escape for an em dash on purpose: blockinfile finds its block by
+            # this exact marker text, so it must stay identical to what is already on VMs.
+            marker: "# {mark} ANSIBLE MANAGED \u2014 /opt data disk"
             block: "UUID={{ opt_fs_uuid.stdout | trim }} /opt {{ opt_fstype }} defaults,nodev,nosuid,nofail,x-systemd.growfs 0 2"
 
         - name: Reload systemd so the fstab-generated units are current
@@ -1222,7 +1224,7 @@
       become: true
       when: hostvars['localhost']['template_mask_ssh_generator'] | default(true)
 
-    - name: "Mask systemd-ssh-generator (no vsock device is ever attached to VMs from this template, so its CID probe only ever fails noisily — see template_configuration.yaml.example)"
+    - name: "Mask systemd-ssh-generator (no vsock device is ever attached to VMs from this template, so its CID probe only ever fails noisily - see template_configuration.yaml.example)"
       ansible.builtin.file:
         src: /dev/null
         dest: /etc/systemd/system-generators/systemd-ssh-generator
@@ -1309,7 +1311,7 @@
           Template '{{ template_name }}' (vmid {{ template_vmid }}) ready
           ============================================
 
-          Root password (console/noVNC access ONLY — SSH is disabled for
+          Root password (console/noVNC access ONLY - SSH is disabled for
           root entirely; save this now if you want it, you won't see it
           again):
           {{ hostvars['localhost']['template_root_password'] }}

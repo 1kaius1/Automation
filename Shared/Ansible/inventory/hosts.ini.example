@@ -1,17 +1,17 @@
 # Copy this file to hosts.ini and set your own node name(s) + address(es).
-# hosts.ini is gitignored (this repo is public — real node names and IPs
+# hosts.ini is gitignored (this repo is public - real node names and IPs
 # identify your cluster); only this .example is committed.
 #
 # [proxmox_nodes] lists every Proxmox VE node in the cluster. Two
 # playbooks in this directory use it:
 #
-#   create-pve_svc_user.yaml — provisions the shared `svc_ansible`
+#   create-pve_svc_user.yaml - provisions the shared `svc_ansible`
 #   identity. Runs against this whole group (connecting as a prompted-for
 #   privileged admin, NOT as svc_ansible): a Linux svc_ansible account +
-#   scoped sudo + image cache dir on every node, and — once, since pmxcfs
-#   replicates it cluster-wide — the svc_ansible@pve API role/user/token.
+#   scoped sudo + image cache dir on every node, and - once, since pmxcfs
+#   replicates it cluster-wide - the svc_ansible@pve API role/user/token.
 #
-#   create-template-linux.yaml — its build steps run `qm` over SSH via
+#   create-template-linux.yaml - its build steps run `qm` over SSH via
 #   `delegate_to: <node name>`, so the delegated name must match both the
 #   Proxmox API node name and a resolvable SSH target. Mapping each node's
 #   API name to its address here keeps the delegation off DNS.

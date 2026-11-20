@@ -2,7 +2,7 @@
 
 Code and configuration reused by more than one project in this repo. If a
 thing is only ever used by one project, it lives in that project; when a
-second project needs it, it moves here. Dependencies flow one way —
+second project needs it, it moves here. Dependencies flow one way -
 projects depend on `Shared/`, never the reverse.
 
 ## Layout
@@ -13,7 +13,7 @@ README once it's more than a single file.
 
 | Dir | For | Status |
 |---|---|---|
-| `Ansible/` | Playbooks, roles and inventory shared by the Proxmox-facing projects — the `svc_ansible` cluster credential and the VM-template pipeline. | In use — see [`Ansible/README.md`](Ansible/README.md) |
+| `Ansible/` | Playbooks, roles and inventory shared by the Proxmox-facing projects - the `svc_ansible` cluster credential and the VM-template pipeline. | In use - see [`Ansible/README.md`](Ansible/README.md) |
 | `Python/` | Helper packages/modules: logging setup, credential prompts that return a token for further automation, config-file CRUD, and similar. | Empty scaffold |
 | `Go/` | Standalone utilities and reusable packages. | Empty scaffold |
 | `BASH/` | Sourceable shell function libraries and small shared scripts. | Empty scaffold |
@@ -25,10 +25,10 @@ each kind of code is obvious before anything is written there.
 
 ## How projects consume it
 
-- **Ansible** — a project playbook pulls shared vars in with a relative
+- **Ansible** - a project playbook pulls shared vars in with a relative
   `vars_files:` include (not a symlink), so the dependency is visible in
   the file itself. See [`Ansible/README.md`](Ansible/README.md).
-- **Everything else** — reference by relative path, a git submodule, or
+- **Everything else** - reference by relative path, a git submodule, or
   the language's local-path dependency mechanism (a Go `replace`
   directive, an editable pip install, a .NET project reference). Anything
   that keeps the link explicit and avoids copy-paste drift.
@@ -42,7 +42,7 @@ each kind of code is obvious before anything is written there.
 - **Public repo.** Never commit real host names, IPs, internal domains,
   admin emails, or internal CIDRs. Site-specific files are gitignored;
   only placeholder `*.example` companions are committed (`Ansible/`
-  established the pattern). Secrets go through Ansible Vault — and the
+  established the pattern). Secrets go through Ansible Vault - and the
   real vault files here are gitignored too, since even ciphertext exposes
   the vault-id in its header.
 - **Self-contained.** A unit under `Shared/` must not reach back into a

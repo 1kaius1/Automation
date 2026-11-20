@@ -57,6 +57,6 @@ proxmox_api_role_permissions:
   # Backup (vzdump jobs/runs to an existing storage target)
   - VM.Backup
 
-# Assigned at the root ACL path (/), i.e. cluster-wide — this is
+# Assigned at the root ACL path (/), i.e. cluster-wide - this is
 # deliberate: the account is meant to work identically no matter which
 # node a guest is provisioned on. See Shared/Ansible/README.md.

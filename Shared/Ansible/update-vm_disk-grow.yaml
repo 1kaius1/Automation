@@ -171,7 +171,7 @@
 
     - name: "Resize {{ grow_disk_key }} to {{ size }} on {{ grow_vm_node }}"
       # Runs as svc_ansible on the node with explicit `sudo -n qm` (that
-      # account's only sudo grant) — NOT an Ansible become.
+      # account's only sudo grant) - NOT an Ansible become.
       ansible.builtin.command: "sudo -n qm disk resize {{ VMID }} {{ grow_disk_key }} {{ size }}"
       register: grow_resize
       changed_when: true
@@ -200,13 +200,13 @@
           {{ grow_blockdev }} is still
           {{ (grow_size_after.stdout | int / 1073741824) | round(2) }} GiB after
           resizing {{ grow_disk_key }}. The /dev/sdX -> Proxmox disk mapping was
-          wrong — nothing in the guest was touched. Check `qm config {{ VMID }}`
+          wrong - nothing in the guest was touched. Check `qm config {{ VMID }}`
           and re-run naming the correct /dev/sdX.
       when: >
         (grow_size_after.stdout | int) < (grow_size_before.stdout | int)
         or ((size is match('^\+')) and (grow_size_after.stdout | int) <= (grow_size_before.stdout | int))
 
-    - name: Grow the partition (if any) and the filesystem — online, no reboot
+    - name: Grow the partition (if any) and the filesystem - online, no reboot
       become: true
       ansible.builtin.shell: |
         set -euo pipefail
@@ -216,7 +216,7 @@
 
         grow_fs() {   # $1 = fs device, $2 = mountpoint
           local fsdev="$1" mp="$2" ft
-          [ -n "$mp" ] || { echo "$fsdev is not mounted — cannot grow it online"; exit 1; }
+          [ -n "$mp" ] || { echo "$fsdev is not mounted - cannot grow it online"; exit 1; }
           ft="$(findmnt -no FSTYPE "$mp")"
           case "$ft" in
             xfs)            echo "xfs_growfs $mp"; xfs_growfs "$mp" ;;
