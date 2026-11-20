@@ -1,6 +1,6 @@
 # Proxmox-FreeIPA
 
-> **Stub** — only this README exists. Design intent, not a working deployment.
+> **Stub** - only this README exists. Design intent, not a working deployment.
 
 Ansible deployment of [FreeIPA](https://www.freeipa.org/) onto Proxmox VMs, on the same foundation as `Proxmox-Forgejo`:
 
