@@ -1,6 +1,6 @@
 # Proxmox-OpenVox
 
-> **Stub** — only this README exists. Design intent, not a working deployment.
+> **Stub** - only this README exists. Design intent, not a working deployment.
 
 Ansible deployment of [OpenVox](https://voxpupuli.org/openvox/) (an open Puppet distribution) with PuppetDB and Puppetboard, onto a Proxmox VM, on the same foundation as `Proxmox-Forgejo`:
 
@@ -17,7 +17,7 @@ Where the other projects *build* a VM, this one *keeps it configured*: ongoing O
 - Agent bootstrap baked into the shared VM template
 - Control-repo layout and module management (r10k or equivalent)
 
-## Open question — the CA
+## Open question - the CA
 
-OpenVox needs a PKI for agent ↔ server auth; Puppet ships its own built-in CA for this. The goal is **one CA for the whole environment** (`Proxmox-CA`), not a second one living inside OpenVox — how that integrates (external CA mode, an intermediate delegated to OpenVox, or agent certs issued out of band) is undecided.
+OpenVox needs a PKI for agent <-> server auth; Puppet ships its own built-in CA for this. **Decided:** `Proxmox-CA` is the root of trust for the whole environment, so OpenVox's trust chains up to it rather than standing up a second root. **Still undecided:** the mechanism - external CA mode, an intermediate delegated to OpenVox (signed by the offline root, as with `Proxmox-FreeIPA`), or agent certs issued out of band.
 
