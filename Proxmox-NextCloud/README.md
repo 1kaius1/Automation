@@ -62,7 +62,7 @@ The Proxmox API credential is **not** created here. Every Proxmox-facing project
 ### Proxmox Requirements
 
 - Proxmox VE 7.0 or later
-- The shared `svc_ansible@pve` credential provisioned once per cluster —
+- The shared `svc_ansible@pve` credential provisioned once per cluster -
   `cd ../Shared/Ansible && ansible-playbook create-pve_svc_user.yaml`
   (see [`../Shared/Ansible/README.md`](../Shared/Ansible/README.md))
 - A vault password file in place so `ansible.cfg`'s `vault_identity_list`
@@ -171,23 +171,23 @@ ansible-playbook deploy_nextcloud.yaml
 
 ```
 .
-├── Deploy.sh                       # Wrapper script (orchestrates deployment)
-├── deploy_nextcloud.yaml           # Playbook: NextCloud deployment
-├── config.yaml.example             # Deployment settings (copy to config.yaml)
-├── ansible.cfg.example             # Copy to ansible.cfg; set vault_identity_list
-├── requirements.yaml               # Ansible collection requirements
-├── README.md                       # This file
-├── ssh_keys/                       # SSH keys for container access (generated)
-│   ├── id_ed25519
-│   └── id_ed25519.pub
-└── roles/
-    ├── create_nextcloud_container/ # Role: Create NextCloud LXC
-    ├── create_collabora_container/ # Role: Create Collabora LXC
-    ├── configure_nextcloud/        # Role: Install/configure NextCloud
-    └── configure_collabora/        # Role: Install/configure Collabora
++-- Deploy.sh                       # Wrapper script (orchestrates deployment)
++-- deploy_nextcloud.yaml           # Playbook: NextCloud deployment
++-- config.yaml.example             # Deployment settings (copy to config.yaml)
++-- ansible.cfg.example             # Copy to ansible.cfg; set vault_identity_list
++-- requirements.yaml               # Ansible collection requirements
++-- README.md                       # This file
++-- ssh_keys/                       # SSH keys for container access (generated)
+|   +-- id_ed25519
+|   +-- id_ed25519.pub
++-- roles/
+    +-- create_nextcloud_container/ # Role: Create NextCloud LXC
+    +-- create_collabora_container/ # Role: Create Collabora LXC
+    +-- configure_nextcloud/        # Role: Install/configure NextCloud
+    +-- configure_collabora/        # Role: Install/configure Collabora
 ```
 
-The shared Proxmox credential lives in `../Shared/Ansible/` — see that project's README.
+The shared Proxmox credential lives in `../Shared/Ansible/` - see that project's README.
 
 ## Configuration
 
@@ -320,7 +320,7 @@ stored only Ansible Vault-encrypted, in
 
 **Best Practices**:
 
-1. **Keep the shared token in Vault** — never in `config.yaml` or on a
+1. **Keep the shared token in Vault** - never in `config.yaml` or on a
    command line. `create-pve_svc_user.yaml` writes it encrypted;
    `-e rotate_api_token=true` rotates it.
 
@@ -332,7 +332,7 @@ stored only Ansible Vault-encrypted, in
 3. **Use strong passwords** for container root, the database, and the
    NextCloud admin account (these live in the gitignored `config.yaml`).
 
-4. **Store the rest securely** — a password manager for `config.yaml`
+4. **Store the rest securely** - a password manager for `config.yaml`
    values; never commit `config.yaml` or `ansible.cfg`.
 
 ### Production Deployment

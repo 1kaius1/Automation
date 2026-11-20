@@ -62,7 +62,7 @@
   # Sanity check - VMID should be >= 100
   ansible.builtin.fail:
     msg: |
-      ❌ Invalid VMID received from Proxmox: {{ nextcloud_vmid }}
+      [ERROR] Invalid VMID received from Proxmox: {{ nextcloud_vmid }}
       
       VMIDs should typically be >= 100.
       This indicates a problem with the Proxmox API query.
@@ -91,7 +91,7 @@
 - name: DEBUG - Show API parameters being passed to module
   ansible.builtin.debug:
     msg: |
-      🔍 API Parameters:
+      API Parameters:
       api_host: {{ proxmox_api_host }}
       api_user: {{ proxmox_api_token_id.split('!')[0] }}
       api_token_id: {{ proxmox_api_token_id.split('!')[1] }}
@@ -149,7 +149,7 @@
 - name: Display error if container with same name exists
   ansible.builtin.debug:
     msg: |
-      ⚠️  WARNING: A container named '{{ nextcloud_hostname }}' already exists!
+      WARNING: A container named '{{ nextcloud_hostname }}' already exists!
       
       Existing container details:
       - VMID: {{ existing_container_by_name.vmid }}
@@ -165,7 +165,7 @@
 - name: Fail if container with same name exists
   ansible.builtin.fail:
     msg: |
-      ❌ Cannot create container: A container named '{{ nextcloud_hostname }}' already exists (VMID {{ existing_container_by_name.vmid }})
+      [ERROR] Cannot create container: A container named '{{ nextcloud_hostname }}' already exists (VMID {{ existing_container_by_name.vmid }})
       
       To resolve this:
       
@@ -203,7 +203,7 @@
 - name: Display warning if VMID is taken (but different name)
   ansible.builtin.debug:
     msg: |
-      ⚠️  The auto-assigned VMID {{ nextcloud_vmid }} is already in use.
+      [WARN] The auto-assigned VMID {{ nextcloud_vmid }} is already in use.
       This shouldn't happen as we queried for next available VMID.
       Will try to create anyway - Proxmox will assign a different VMID if needed.
   when: 
@@ -433,7 +433,7 @@
   ansible.builtin.debug:
     msg: |
       ============================================
-      ✅ NextCloud Container Created Successfully
+      [OK] NextCloud Container Created Successfully
       ============================================
       
       Container Details:

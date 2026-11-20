@@ -23,7 +23,7 @@
 # ========================================
 # Proxmox Connection
 # ========================================
-# The API credential (host, token id, token secret) is NOT set here — it
+# The API credential (host, token id, token secret) is NOT set here - it
 # comes from the shared, cluster-wide svc_ansible@pve credential in
 # ../Shared/Ansible/group_vars/proxmox_cluster/ (provisioned by
 # ../Shared/Ansible/create-pve_svc_user.yaml). Only pick the node:

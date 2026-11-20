@@ -2,7 +2,7 @@
 config.yaml
 ssh_keys/*
 
-# Personal vault-id label/filename — only the .example is committed.
+# Personal vault-id label/filename - only the .example is committed.
 ansible.cfg
 
 # A vault file ever decrypted in place by mistake.

@@ -40,7 +40,7 @@ cat > test_minimal.yaml << 'EOF'
     
     - name: Display configuration source
       ansible.builtin.debug:
-        msg: "{{ '✅ Using config.yaml' if config_file_check.stat.exists else '📝 Using prompts (no config.yaml)' }}"
+        msg: "{{ '[OK] Using config.yaml' if config_file_check.stat.exists else 'Using prompts (no config.yaml)' }}"
   
   vars_prompt:
     - name: test_var
@@ -57,7 +57,7 @@ EOF
 echo "  Running test playbook (should show prompts message)..."
 ansible-playbook test_minimal.yaml -e test_var=from_command_line 2>&1 | grep -E "(Using|Value:)" || true
 
-echo "  ✅ Test 1 complete"
+echo "  [OK] Test 1 complete"
 echo ""
 
 # Test 2: With config.yaml (should load from file)
@@ -73,7 +73,7 @@ EOF
 echo "  Running test playbook (should show config file message)..."
 ansible-playbook test_minimal.yaml 2>&1 | grep -E "(Using|Value:)" || true
 
-echo "  ✅ Test 2 complete"
+echo "  [OK] Test 2 complete"
 echo ""
 
 # Cleanup
@@ -87,7 +87,7 @@ fi
 
 echo ""
 echo "============================================"
-echo "✅ All Tests Passed!"
+echo "[OK] All Tests Passed!"
 echo "============================================"
 echo ""
 echo "The hybrid configuration system is working correctly:"

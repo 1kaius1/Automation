@@ -61,7 +61,7 @@
   # Sanity check - VMID should be >= 100
   ansible.builtin.fail:
     msg: |
-      ❌ Invalid VMID received from Proxmox: {{ collabora_vmid }}
+      [ERROR] Invalid VMID received from Proxmox: {{ collabora_vmid }}
       
       VMIDs should typically be >= 100.
       This indicates a problem with the Proxmox API query.
@@ -137,7 +137,7 @@
 - name: Display error if container with same name exists
   ansible.builtin.debug:
     msg: |
-      ⚠️  WARNING: A container named '{{ collabora_hostname }}' already exists!
+      WARNING: A container named '{{ collabora_hostname }}' already exists!
       
       Existing container details:
       - VMID: {{ existing_container_by_name.vmid }}
@@ -153,7 +153,7 @@
 - name: Fail if container with same name exists
   ansible.builtin.fail:
     msg: |
-      ❌ Cannot create container: A container named '{{ collabora_hostname }}' already exists (VMID {{ existing_container_by_name.vmid }})
+      [ERROR] Cannot create container: A container named '{{ collabora_hostname }}' already exists (VMID {{ existing_container_by_name.vmid }})
       
       To resolve this:
       
@@ -191,7 +191,7 @@
 - name: Display warning if VMID is taken (but different name)
   ansible.builtin.debug:
     msg: |
-      ⚠️  The auto-assigned VMID {{ collabora_vmid }} is already in use.
+      [WARN] The auto-assigned VMID {{ collabora_vmid }} is already in use.
       This shouldn't happen as we queried for next available VMID.
       Will try to create anyway - Proxmox will assign a different VMID if needed.
   when: 
@@ -390,7 +390,7 @@
   ansible.builtin.debug:
     msg: |
       ============================================
-      ✅ Collabora Container Created Successfully
+      [OK] Collabora Container Created Successfully
       ============================================
       
       Container Details:

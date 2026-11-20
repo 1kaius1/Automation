@@ -281,7 +281,7 @@
       
       1. Log into NextCloud as admin: http://{{ nextcloud_domain }}
       
-      2. Go to: Settings → Administration → Office
+      2. Go to: Settings -> Administration -> Office
       
       3. Install the "Nextcloud Office" app if not already installed
          (formerly called "Collabora Online")
@@ -342,7 +342,7 @@
   ansible.builtin.debug:
     msg: |
       ============================================
-      ✅ Collabora Office Installation Complete!
+      [OK] Collabora Office Installation Complete!
       ============================================
       
       Collabora Office Details:
@@ -361,7 +361,7 @@
       NextCloud Integration:
       To complete the setup, configure NextCloud to use this Collabora server:
       1. Install "Nextcloud Office" app in NextCloud
-      2. Go to Settings → Office
+      2. Go to Settings -> Office
       3. Enter server URL: http://{{ collabora_container_ip }}:9980
       4. Save and test the connection
       
